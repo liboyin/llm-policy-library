@@ -1,0 +1,36 @@
+[project]
+name = "llm-policy-library"
+version = "0.0.1"
+description = "A sample project using LLM agents to search and query policy documents."
+requires-python = ">=3.14"
+authors = [
+  {name = "Libo Yin", email = "liboyin830@gmail.com"}
+]
+
+
+[project.optional-dependencies]
+dev = [
+  "ipython",
+  "mypy",
+  "pytest",
+  "pytest-cov",
+  "pytest-mock",
+  "pytest-randomly",
+  "ruff",
+]
+
+[tool.mypy]
+check_untyped_defs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_configs = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=llm_policy_library --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+branch = true

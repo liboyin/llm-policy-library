@@ -13,14 +13,15 @@ Phases are ordered by dependency; each phase ends in a commit (see "Definition o
 | D4 | No Azure resources exist (`.env` empty) | **User provisions manually**; we deliver step-by-step instructions incl. tier/model options. Code must work with either Free-tier Search (no semantic ranker) or Basic+ (semantic ranker), toggled by env var |
 | D5 | Evaluation rigor (user wants precision/recall) | **Azure AI Evaluation SDK** (`azure-ai-evaluation`): `DocumentRetrievalEvaluator` fed by a hand-labeled golden set (gives precision/recall/NDCG) + `GroundednessEvaluator`/`RelevanceEvaluator` for final answers |
 | D6 | Serving surface | **FastAPI service** (async `/query`, load-testable) + **thin CLI** wrapping the same pipeline |
+| D7 | All non-reasoning Azure OpenAI chat models became **undeployable** by provisioning time (gpt-4.1/gpt-4o family **deprecated** — no new deployments; `*-chat` variants **retired**), and every deployable OpenAI chat model is now a **reasoning model that rejects `temperature`/`top_p`/`seed`** (verified against the Microsoft Foundry model-retirement schedule, 2026-07-08) | Chat model = **`gpt-5-mini`** (option: `gpt-5.1` with `reasoning_effort=none` for lowest latency). **Determinism is redefined** as grounding-enforced rather than sampling-based: structured outputs (JSON schema) + pinned model version + minimized `reasoning_effort` + citation-enforced grounding + safe fallback. `temperature`/`seed`/`top_p` are dropped (unsupported). Embeddings unchanged (`text-embedding-3-small`, still GA). |
 
 Decisions made by the agent (uncontroversial, state-and-proceed):
 
 - **Agent framework**: `agent-framework` (Microsoft Agent Framework, Python) with a sequential **Workflow**: Planner → Retrieval → Response executors, communicating via typed Pydantic messages.
-- **Models**: chat = `gpt-4.1-mini` (supports `temperature=0` + `seed`; reasoning models like the gpt-5 family do not accept `temperature` and are unsuitable for the determinism requirement); embeddings = `text-embedding-3-small`. Both verified available in **Australia East** (user's region) under both Global Standard and regional Standard deployment types (Microsoft Learn region tables, checked 2026-07-08). Alternatives documented in the provisioning guide.
+- **Models** (superseded by D7): chat = **`gpt-5-mini`** (mini-class GA reasoning model; `gpt-5.1` with `reasoning_effort=none` is the low-latency option); embeddings = `text-embedding-3-small` (GA until 2027-04-15). The originally-planned `gpt-4.1-mini` and all non-reasoning chat models are no longer deployable — see D7. Chat availability skews to **Global Standard**; embeddings available under both deployment types. Re-check the Foundry deploy dialog at provisioning time.
 - **Region**: all resources in **Australia East (Sydney)** — the only Australian region with Azure OpenAI model deployments and semantic-ranker-capable AI Search. Data Zone deployments do not exist for APAC, so the deployment-type choice is regional Standard (inference stays in Australia) vs Global Standard (may be processed in any Azure region).
 - **Search mode**: hybrid (vector + BM25), with semantic reranking layered on when `AZURE_SEARCH_SEMANTIC_RANKER=true`.
-- **Determinism**: `temperature=0`, `seed=42`, `top_p=1`, structured outputs (JSON schema) for the Planner; document that OpenAI `seed` is best-effort, so determinism is "config-level", not bit-exact.
+- **Determinism** (revised per D7): deployable Azure OpenAI models are all reasoning models that reject `temperature`/`top_p`/`seed`, so determinism is **grounding-enforced, not sampling-based** — structured outputs (JSON schema) for the Planner, a **pinned model version**, minimized `reasoning_effort` (`LLM_REASONING_EFFORT`, default `minimal`), and hard citation-enforced grounding + safe fallback. Document that this prevents hallucination more robustly than temperature knobs ever did, and that reasoning models are not bit-exact reproducible.
 - **Grounding/fallback**: Response agent may only cite retrieved controls (inline `[AC-2]`-style citations); if retrieval returns nothing above `MIN_RELEVANCE_SCORE`, return the fixed safe-fallback message without calling the Response agent.
 - **Logging**: stdlib `logging` with a JSON formatter; every request logs query, plan, retrieved doc IDs + scores, response, latency, correlation ID.
 - **Auth**: API keys via env vars for the demo; Entra ID / managed identity discussed in the architecture doc's security section.
@@ -28,7 +29,7 @@ Decisions made by the agent (uncontroversial, state-and-proceed):
 ### Known risks (check early, escalate to user if hit)
 
 - **Python 3.14**: ~~resolved~~ — a full `pip install --dry-run` of every planned dependency resolved cleanly on Python 3.14 (verified 2026-07-08), so the devcontainer's interpreter stays. The user has confirmed 3.14 is not a hard requirement: if a runtime (not install-time) incompatibility surfaces later, downgrade `requires-python` to the newest version all deps support — no need to stop and ask.
-- **Model/region availability**: verified for Australia East as of 2026-07-08, but availability tables change monthly — re-check at provisioning time. Note `gpt-4o-mini` is **not** available as a regional Standard deployment in Australia East (Global Standard only), so it is only a fallback if Global Standard is acceptable.
+- **Model availability churn**: the chat-model landscape shifted materially between planning and provisioning (see D7) — the entire GPT-4.x/non-reasoning generation went undeployable and only gpt-5-family reasoning models remain. Availability tables change monthly; re-check the Foundry deploy dialog at provisioning time and re-confirm the chosen `gpt-5-mini`/`gpt-5.1` is still deployable in Australia East.
 - **Semantic ranker**: requires Basic tier or above. Code path must degrade gracefully to hybrid-only.
 
 ---
@@ -41,15 +42,15 @@ Deliverable: `docs/azure-setup.md` + `.env.example`. The user provisions while l
   1. Resource group (suggest `rg-llm-policy-library`, region `australiaeast`).
   2. Azure OpenAI resource with two deployments, choosing a **deployment type** first (no APAC Data Zone option exists):
      - **Global Standard** (recommended for this assessment): higher default TPM quota (helps the load test); prompts/responses may be processed in any Azure region, data at rest stays in the Australia geography.
-     - **Regional Standard**: all inference stays in Australia East — the right choice if simulating strict AU data-residency; lower default quota, and note `gpt-4o-mini` is unavailable regionally.
-     - chat: `gpt-4.1-mini` — available in Australia East under both types (options: `gpt-4.1` = higher quality, both types; `gpt-4o-mini` = cheaper, Global Standard only; avoid gpt-5/o-series reasoning models — no `temperature` support). Request ≥100K TPM if quota allows (needed for load test).
+     - **Regional Standard**: all inference stays in Australia East — the right choice if simulating strict AU data-residency; lower default quota, and gpt-5-family chat availability is narrower regionally (confirm in the deploy dialog).
+     - chat: `gpt-5-mini` — current GA mini-class model (options: `gpt-5.1` = higher quality + `reasoning_effort=none` low-latency mode; `gpt-5` = highest quality). The GPT-4.x/`*-chat` non-reasoning models are deprecated/retired and no longer deployable (see D7); pin an explicit version, avoid the floating `gpt-chat-latest` alias. Request ≥100K TPM if quota allows (needed for load test).
      - embeddings: `text-embedding-3-small` — available in Australia East under both types (option: `-3-large` for quality, also available; 6× embedding cost).
   3. Azure AI Search service in `australiaeast`, with the tier trade-off spelled out:
      - **Free**: $0, 50 MB, 3 indexes, **no semantic ranker** → set `AZURE_SEARCH_SEMANTIC_RANKER=false`.
      - **Basic** (recommended): ~US$75/mo prorated hourly (a few dollars if deleted after the assessment); semantic ranker is confirmed available in Australia East → `true`.
   4. Where to find each endpoint/key, and a teardown checklist (delete the resource group).
 - [x] Write `.env.example` with every variable the code will read:
-  `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_CHAT_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`, `AZURE_SEARCH_ENDPOINT`, `AZURE_SEARCH_API_KEY`, `AZURE_SEARCH_INDEX_NAME`, `AZURE_SEARCH_SEMANTIC_RANKER`, `MIN_RELEVANCE_SCORE`, `RETRIEVAL_TOP_K` (default 5), `LLM_SEED` (default 42), `LOG_LEVEL`.
+  `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_CHAT_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`, `AZURE_SEARCH_ENDPOINT`, `AZURE_SEARCH_API_KEY`, `AZURE_SEARCH_INDEX_NAME`, `AZURE_SEARCH_SEMANTIC_RANKER`, `MIN_RELEVANCE_SCORE`, `RETRIEVAL_TOP_K` (default 5), `LLM_REASONING_EFFORT` (default `minimal`; per D7, replaces the unusable `LLM_SEED`), `LOG_LEVEL`.
 - [x] Notify the user to provision and fill in `.env`.
 
 ## Phase 1 — Project scaffolding
@@ -78,9 +79,9 @@ Structured messages first — these are the contracts (in `llm_policy_library/mo
 
 Agents (each its own module, single responsibility):
 
-- [ ] `llm_policy_library/agents/planner.py` — **Planner Agent**: chat agent with structured output (`QueryPlan` JSON schema), `temperature=0`, `seed`. Decomposes the user query into 1–3 search steps.
+- [ ] `llm_policy_library/agents/planner.py` — **Planner Agent**: chat agent with structured output (`QueryPlan` JSON schema) and minimized `reasoning_effort` (per D7; no `temperature`/`seed`). Decomposes the user query into 1–3 search steps.
 - [ ] `llm_policy_library/agents/retrieval.py` — **Retrieval Agent**: no LLM; executes each `PlanStep` against Azure AI Search (hybrid vector+BM25, semantic reranking if enabled), returns top `RETRIEVAL_TOP_K` (3–5) docs per step, drops results below `MIN_RELEVANCE_SCORE`, deduplicates across steps.
-- [ ] `llm_policy_library/agents/response.py` — **Response Agent**: chat agent, `temperature=0`, `seed`; system prompt mandates answering **only** from the provided documents with `[control-id]` citations; if the document set is empty → workflow short-circuits to the safe fallback (`GroundedResponse(is_fallback=True)`) without an LLM call.
+- [ ] `llm_policy_library/agents/response.py` — **Response Agent**: chat agent with minimized `reasoning_effort` (per D7; no `temperature`/`seed`); system prompt mandates answering **only** from the provided documents with `[control-id]` citations; if the document set is empty → workflow short-circuits to the safe fallback (`GroundedResponse(is_fallback=True)`) without an LLM call.
 - [ ] `llm_policy_library/orchestrator.py`: Microsoft Agent Framework **Workflow** (`WorkflowBuilder`) wiring Planner → Retrieval → Response executors with the typed messages above; exposes `async def answer_query(query: str) -> PipelineResult` (plan + retrieved docs + response, for logging/eval). Structured logging at each hop.
 - [ ] Unit tests: each agent in isolation (mock chat client / mock search client via `patch.object`), orchestration flow with all agents mocked, fallback path, citation extraction. Coverage ≥80% per file.
 - [ ] Smoke-test live with 1–2 queries once Azure is up; save raw output to `samples/`.

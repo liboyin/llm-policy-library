@@ -56,9 +56,10 @@ There is **no APAC Data Zone option**, so choose between:
 | **Global Standard** (recommended) | Data at rest stays in the Australia geography; prompts/responses may be **processed in any Azure region** | Higher default TPM — helps the load test | Default for this assessment |
 | **Regional Standard** | All inference stays **in Australia East** | Lower default quota | Simulating strict AU data-residency |
 
-> If you pick **Regional Standard**, note that `gpt-4o-mini` is **not** available
-> regionally in Australia East (Global Standard only). The recommended `gpt-4.1-mini`
-> is available under **both** types.
+> **Global Standard is recommended** for this assessment. The current GA chat
+> models (the gpt-5 family, see §2c) are offered primarily via Global Standard;
+> regional Standard availability is narrower, so confirm in the deploy dialog if you
+> require strict AU-only inference.
 
 ### 2c. Deploy the two models
 
@@ -70,15 +71,28 @@ Create **two** deployments. The **deployment name** you type here is what goes i
 
 | Model | Notes |
 |---|---|
-| **`gpt-4.1-mini`** (recommended) | Available under both deployment types. Supports `temperature=0` + `seed`, which the determinism requirement needs. |
-| `gpt-4.1` | Higher quality, both types, higher cost. |
-| `gpt-4o-mini` | Cheaper, **Global Standard only** in Australia East. |
+| **`gpt-5-mini`** (recommended) | Current GA mini-class model. Cost-effective, capable enough for planning + grounded answering. |
+| `gpt-5.1` | Higher quality; supports `reasoning_effort=none`, so it can run in a fast near-instant mode — the best choice if the 50-user latency SLA is tight. Higher cost. |
+| `gpt-5` | Full-size, highest quality, highest cost/latency. |
 
-> **Avoid** gpt-5 / o-series reasoning models: they do **not** accept a `temperature`
-> parameter, so they cannot satisfy the deterministic-configuration requirement.
+> **The GPT-4.x and `*-chat` models are gone.** As of 2026, `gpt-4.1-mini`,
+> `gpt-4.1`, `gpt-4o`, and `gpt-4o-mini` are **deprecated** (existing deployments run,
+> but you can **no longer create new ones**), and the `gpt-5-chat` / `gpt-5.1-chat`
+> variants are **retired**. The only newly-deployable OpenAI chat models are the
+> **gpt-5 reasoning family**.
+>
+> **Determinism note:** these reasoning models do **not** accept `temperature`,
+> `top_p`, or `seed`. This project therefore achieves determinism and no-hallucination
+> through **structured outputs**, a **pinned model version**, minimized
+> `reasoning_effort`, and **citation-enforced grounding + safe fallback** — not
+> temperature knobs. See [architecture.md](architecture.md) (Phase 7) for the full
+> rationale. Set `reasoning_effort` low (`minimal` on gpt-5-mini, `none` on gpt-5.1)
+> to reduce both latency and output variance.
 
-When deploying the chat model, request **≥ 100K TPM** if your quota allows — the
-50-user load test (Phase 6) needs the headroom.
+When deploying the chat model, **pin an explicit model version** (do not use a
+floating alias like `gpt-chat-latest`, whose behavior drifts over time) and request
+**≥ 100K TPM** if your quota allows — the 50-user load test (Phase 6) needs the
+headroom.
 
 **Embedding model** (deployment name → `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`):
 
@@ -161,7 +175,7 @@ Then edit `.env` with the values collected above:
 | `AZURE_SEARCH_SEMANTIC_RANKER` | `true` on Basic, `false` on Free |
 | `RETRIEVAL_TOP_K` | keep default `5` |
 | `MIN_RELEVANCE_SCORE` | keep default `0.02` |
-| `LLM_SEED` | keep default `42` |
+| `LLM_REASONING_EFFORT` | keep default `minimal` (use `none` if you deployed `gpt-5.1`) |
 | `LOG_LEVEL` | keep default `INFO` |
 
 > `.env` is gitignored — **never commit real keys**. If a key is ever exposed,

@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "llm-policy-library"
 version = "0.0.1"
@@ -6,18 +10,39 @@ requires-python = ">=3.14"
 authors = [
   {name = "Libo Yin", email = "liboyin830@gmail.com"}
 ]
-
+dependencies = [
+  # Microsoft Agent Framework: `-core` only. The `agent-framework` meta-package
+  # pulls ~40 optional integrations (Bedrock, Ollama, Redis, ...) we never use.
+  "agent-framework-core",
+  "azure-ai-evaluation",
+  # Major-capped: 12.x reworked the index/vector API this project builds against.
+  "azure-search-documents>=12.0.0,<13",
+  "fastapi",
+  "httpx",
+  "openai",
+  "pydantic>=2",
+  "pydantic-settings>=2",
+  "python-dotenv",
+  "uvicorn",
+]
 
 [project.optional-dependencies]
 dev = [
   "ipython",
+  "locust",
   "mypy",
   "pytest",
   "pytest-cov",
   "pytest-mock",
   "pytest-randomly",
+  "respx",
   "ruff",
 ]
+
+[tool.setuptools]
+# Explicit: setuptools' flat-layout auto-discovery would choke once `evaluation/`
+# and `loadtest/` land as top-level directories in later phases.
+packages = ["llm_policy_library"]
 
 [tool.mypy]
 check_untyped_defs = true

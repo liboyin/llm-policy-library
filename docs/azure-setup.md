@@ -150,8 +150,9 @@ Resource → **Keys and Endpoint**:
   (an admin key is required because ingestion creates the index and uploads
   documents).
 
-The index name (`AZURE_SEARCH_INDEX_NAME`, default `nist-800-53-controls`) is created
-by the Phase 2 ingestion script — you do not create it in the portal.
+The index named by `AZURE_SEARCH_INDEX_NAME` is created by the Phase 2 ingestion script —
+you do not create it in the portal. The variable is required (it has no default in code);
+`.env.example` pre-fills it with `nist-800-53-controls`.
 
 ---
 
@@ -171,7 +172,7 @@ Then edit `.env` with the values collected above:
 | `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | §2c embedding deployment name |
 | `AZURE_SEARCH_ENDPOINT` | §3 service Overview URL |
 | `AZURE_SEARCH_API_KEY` | §3 primary admin key |
-| `AZURE_SEARCH_INDEX_NAME` | keep default `nist-800-53-controls` |
+| `AZURE_SEARCH_INDEX_NAME` | required; keep the `.env.example` value `nist-800-53-controls` |
 | `AZURE_SEARCH_SEMANTIC_RANKER` | `true` on Basic, `false` on Free |
 | `RETRIEVAL_TOP_K` | keep default `5` |
 | `MIN_RELEVANCE_SCORE` | keep default `0.02` |

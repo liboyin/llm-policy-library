@@ -57,11 +57,24 @@ Deliverable: `docs/azure-setup.md` + `.env.example`. The user provisions while l
 
 ## Phase 1 — Project scaffolding
 
-- [ ] Add runtime deps to `pyproject.toml`: `agent-framework-core` (NOT the `agent-framework` meta-package — it pulls ~40 optional integrations like Bedrock/Ollama/Redis; core includes the Azure OpenAI clients and workflow engine), `azure-search-documents`, `openai`, `azure-ai-evaluation`, `fastapi`, `uvicorn`, `pydantic`, `pydantic-settings`, `python-dotenv`, `httpx`. Dev deps: add `locust`, `respx` (or equivalent for HTTP mocking).
-- [ ] Install and import-smoke-test the deps on Python 3.14 (dry-run resolution already verified 2026-07-08; per the risk note above, downgrade Python only if a real runtime incompatibility appears — user pre-approved).
-- [ ] `llm_policy_library/config.py`: `pydantic-settings` `Settings` class reading the env vars above; fail fast with a clear error on missing required vars.
-- [ ] `llm_policy_library/logging_setup.py`: JSON-formatted structured logging; helper to bind a per-request correlation ID.
-- [ ] Unit tests for both modules; `pytest`, `mypy .`, `ruff check .` green.
+- [x] Add runtime deps to `pyproject.toml`: `agent-framework-core` (NOT the `agent-framework` meta-package — it pulls ~40 optional integrations like Bedrock/Ollama/Redis; core includes the Azure OpenAI clients and workflow engine), `azure-search-documents`, `openai`, `azure-ai-evaluation`, `fastapi`, `uvicorn`, `pydantic`, `pydantic-settings`, `python-dotenv`, `httpx`. Dev deps: add `locust`, `respx` (or equivalent for HTTP mocking).
+- [x] Install and import-smoke-test the deps on Python 3.14 (dry-run resolution already verified 2026-07-08; per the risk note above, downgrade Python only if a real runtime incompatibility appears — user pre-approved).
+- [x] `llm_policy_library/config.py`: `pydantic-settings` `Settings` class reading the env vars above; fail fast with a clear error on missing required vars.
+- [x] `llm_policy_library/logging_setup.py`: JSON-formatted structured logging; helper to bind a per-request correlation ID.
+- [x] Unit tests for both modules; `pytest`, `mypy .`, `ruff check .` green.
+
+**Status (2026-07-09):** Phase 1 complete. 31 tests, 100% line/branch coverage on both modules; `mypy .` and `ruff check .` clean. Notes for later phases:
+
+- **`azure-search-documents` resolved to 12.0.0**, a new major (not the 11.5.x assumed at planning time). Phase 2 must be written against the 12.x index/vector API.
+- **Python 3.14 needs no downgrade** — every dependency installed and imported cleanly. Two cosmetic quirks: `locust` must be imported before anything that touches `ssl` (gevent monkey-patching), and it prints a harmless `greenlet is being finalized` traceback at interpreter shutdown. Neither affects Phase 6, which runs `locust` as its own process.
+- **`_env_file` needs `# type: ignore[call-arg]`**: pydantic's PEP 681 `dataclass_transform` makes mypy synthesize `Settings.__init__` from the fields alone, hiding the argument `BaseSettings.__init__` really accepts.
+- **`.devcontainer/postCreateCommand.sh` still has `pip install -e .` commented out**, so a rebuilt container has no dependencies. `README.md` documents `pip install -e ".[dev]"` as the manual step; uncommenting it (with the `[dev]` extra) is a one-line improvement left to the user.
+- **A pinned chat-model version is not yet wired into config** — D7 calls for pinning, and the deployment (`gpt-5-mini`, version `2025-08-07`) is pinned in Azure rather than in code. Revisit when the Phase 3 agents construct the chat client.
+
+Carried forward from the Phase 1 review (deliberately out of Phase 1 scope):
+
+- **Phase 3 — `MIN_RELEVANCE_SCORE` straddles two score scales.** The threshold is compared against `@search.score` (RRF, ~0.0x) when `AZURE_SEARCH_SEMANTIC_RANKER=false` but against `@search.rerankerScore` (0–4) when it is `true`. One fixed `0.02` default cannot suit both: it must be scale-aware, or a second threshold is needed, otherwise the ranker toggle silently over- or under-filters and the safe fallback misfires.
+- **Phase 4 — `load_settings()` is uncached and its `.env` path is CWD-relative.** Calling it per request would do blocking file I/O on the event loop, and launching `uvicorn`/the CLI from outside the repo root silently reads a different `.env` (or none). Load settings once at startup, or add a cached accessor resolving the dotenv path absolutely.
 
 ## Phase 2 — Data ingestion (Azure AI Search index)
 

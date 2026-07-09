@@ -68,7 +68,6 @@ Deliverable: `docs/azure-setup.md` + `.env.example`. The user provisions while l
 - **`azure-search-documents` resolved to 12.0.0**, a new major (not the 11.5.x assumed at planning time). Phase 2 must be written against the 12.x index/vector API.
 - **Python 3.14 needs no downgrade** — every dependency installed and imported cleanly. Two cosmetic quirks: `locust` must be imported before anything that touches `ssl` (gevent monkey-patching), and it prints a harmless `greenlet is being finalized` traceback at interpreter shutdown. Neither affects Phase 6, which runs `locust` as its own process.
 - **`_env_file` needs `# type: ignore[call-arg]`**: pydantic's PEP 681 `dataclass_transform` makes mypy synthesize `Settings.__init__` from the fields alone, hiding the argument `BaseSettings.__init__` really accepts.
-- **`.devcontainer/postCreateCommand.sh` still has `pip install -e .` commented out**, so a rebuilt container has no dependencies. `README.md` documents `pip install -e ".[dev]"` as the manual step; uncommenting it (with the `[dev]` extra) is a one-line improvement left to the user.
 - **A pinned chat-model version is not yet wired into config** — D7 calls for pinning, and the deployment (`gpt-5-mini`, version `2025-08-07`) is pinned in Azure rather than in code. Revisit when the Phase 3 agents construct the chat client.
 
 Carried forward from the Phase 1 review (deliberately out of Phase 1 scope):

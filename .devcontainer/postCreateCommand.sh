@@ -1,4 +1,4 @@
-# pip --no-cache-dir install -e .
+pip --no-cache-dir install -e .
 
 # Install Google Antigravity CLI
 curl -fsSL https://antigravity.google/cli/install.sh | bash

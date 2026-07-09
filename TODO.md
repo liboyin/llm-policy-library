@@ -53,6 +53,8 @@ Deliverable: `docs/azure-setup.md` + `.env.example`. The user provisions while l
   `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_CHAT_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`, `AZURE_SEARCH_ENDPOINT`, `AZURE_SEARCH_API_KEY`, `AZURE_SEARCH_INDEX_NAME`, `AZURE_SEARCH_SEMANTIC_RANKER`, `MIN_RELEVANCE_SCORE`, `RETRIEVAL_TOP_K` (default 5), `LLM_REASONING_EFFORT` (default `minimal`; per D7, replaces the unusable `LLM_SEED`), `LOG_LEVEL`.
 - [x] Notify the user to provision and fill in `.env`.
 
+**Status (verified live 2026-07-09):** Phase 0 complete, all services verified. Azure OpenAI endpoint + key work; both deployments respond (`gpt-5-mini`, pinned version `2025-08-07`, and `text-embedding-3-small`). Azure AI Search authenticates with the admin key (an initial copy-paste slip in `.env` was fixed by the user); the service is **Basic tier** (15-index/15 GB quota), so `AZURE_SEARCH_SEMANTIC_RANKER=true` is correct. No indexes exist yet — Phase 2 ingestion creates `nist-800-53-controls`. Note: the legacy `GET /openai/deployments` listing route 404s on current api-versions (it still answers on pre-2023-05 ones) — harmless; inference and `/openai/v1/models` routes work, and Phase 1+ code should use the standard SDK clients, not that listing route.
+
 ## Phase 1 — Project scaffolding
 
 - [ ] Add runtime deps to `pyproject.toml`: `agent-framework-core` (NOT the `agent-framework` meta-package — it pulls ~40 optional integrations like Bedrock/Ollama/Redis; core includes the Azure OpenAI clients and workflow engine), `azure-search-documents`, `openai`, `azure-ai-evaluation`, `fastapi`, `uvicorn`, `pydantic`, `pydantic-settings`, `python-dotenv`, `httpx`. Dev deps: add `locust`, `respx` (or equivalent for HTTP mocking).

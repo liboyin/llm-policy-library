@@ -52,7 +52,7 @@ Before committing, you MUST perform an adversarial review on your changes:
 - Are there design choices that make testing or validation unnecessarily difficult?
 - Anything else a senior reviewer would push back on? (Use judgment)
 
-The review MUST be performed in a subagent whenever subagent capability is available.
+The review MUST be performed in a subagent. Prefer calling Antigravity CLI (`agy`).
 
 Fix trivial issues. For others, stop and confirm with the user.
 

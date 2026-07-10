@@ -325,8 +325,10 @@ def parse_catalog(catalog: dict[str, Any]) -> list[PolicyRecord]:
     except KeyError as error:
         raise DatasetError("document has no 'catalog' object; not an OSCAL catalog") from error
 
-    parameters = build_parameter_map(body)
     try:
+        # Inside the guard: an OSCAL parameter without an `id` is the same class
+        # of corpus change as a control without a `title`, and must read as one.
+        parameters = build_parameter_map(body)
         return [
             PolicyRecord(
                 id=control["id"],

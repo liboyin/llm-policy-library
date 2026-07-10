@@ -268,9 +268,26 @@ def test_parse_catalog_rejects_a_document_that_is_not_a_catalog() -> None:
         testee.parse_catalog({"not-a-catalog": {}})
 
 
-def test_parse_catalog_reports_a_missing_field_as_a_schema_change() -> None:
+def test_parse_catalog_reports_a_missing_control_field_as_a_schema_change() -> None:
     """Bumping the pinned commit onto a reshaped catalog must not surface as a bare KeyError."""
     catalog = {"catalog": {"groups": [{"title": "Access Control", "controls": [{"id": "ac-1"}]}]}}
+
+    with pytest.raises(testee.DatasetError, match="schema may have changed"):
+        testee.parse_catalog(catalog)
+
+
+def test_parse_catalog_reports_a_missing_parameter_id_as_a_schema_change() -> None:
+    """Parameters are indexed before any control is read; that step needs the same guard."""
+    catalog = {
+        "catalog": {
+            "groups": [
+                {
+                    "title": "Access Control",
+                    "controls": [{"id": "ac-1", "title": "T", "params": [{"label": "frequency"}]}],
+                }
+            ]
+        }
+    }
 
     with pytest.raises(testee.DatasetError, match="schema may have changed"):
         testee.parse_catalog(catalog)

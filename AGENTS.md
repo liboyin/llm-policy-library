@@ -43,16 +43,17 @@ ruff check .
 
 # Review Guidelines
 
-Before committing, you MUST perform an adversarial review on your changes:
+Before committing a change that touches code, tests, or configuration, you MUST perform an adversarial review on your changes. A documentation-only change does not need one; the user reviews it.
 
 - Does it achieve the intended purpose?
 - Is it bug-free?
 - Can it be simplified?
+- Is it consistent with the documentation?
 - Are there design flaws or anti-patterns?
 - Are there design choices that make testing or validation unnecessarily difficult?
 - Anything else a senior reviewer would push back on? (Use judgment)
 
-The review MUST be performed in a subagent. Prefer calling Antigravity CLI (`agy`).
+The review MUST be performed by the `/adversarial-review` skill (`.claude/skills/adversarial-review/`), which puts the questions above to independent reviewers in subagents, verifies each finding against the source, and triages the result. The reviewers MUST span at least two model families, since a model shares the blind spots of the one that wrote the code. Prefer Claude Fable 5 as one of them.
 
 Fix trivial issues. For others, stop and confirm with the user.
 

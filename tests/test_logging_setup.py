@@ -15,15 +15,22 @@ import llm_policy_library.logging_setup as testee
 
 @pytest.fixture
 def isolated_root_logger() -> Iterator[logging.Logger]:
-    """Restore the root logger's handlers and level after a test reconfigures it."""
+    """Restore the root and library logger state after a test reconfigures it."""
     root = logging.getLogger()
     saved_handlers = root.handlers[:]
     saved_level = root.level
+    # `configure_logging` also mutates these; tests run in random order, so a
+    # leaked level would make an unrelated test fail depending on the seed.
+    saved_library_levels = {
+        name: logging.getLogger(name).level for name in testee._NOISY_LIBRARY_LOGGERS
+    }
     try:
         yield root
     finally:
         root.handlers[:] = saved_handlers
         root.setLevel(saved_level)
+        for name, level in saved_library_levels.items():
+            logging.getLogger(name).setLevel(level)
 
 
 def make_record(message: str = "hello %s", **extra: Any) -> logging.LogRecord:
@@ -239,3 +246,56 @@ def test_configure_logging_defaults_to_stdout(isolated_root_logger: logging.Logg
     handler = isolated_root_logger.handlers[0]
     assert isinstance(handler, logging.StreamHandler)
     assert handler.stream is sys.stdout
+
+
+def test_configure_logging_silences_chatty_http_libraries(
+    isolated_root_logger: logging.Logger,
+) -> None:
+    """The Azure SDK dumps request and response headers per call, burying the audit trail."""
+    stream = io.StringIO()
+    testee.configure_logging(level="INFO", stream=stream)
+
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").info("Request URL: ...")
+    logging.getLogger("httpx").info("HTTP Request: GET ...")
+    logging.getLogger("llm_policy_library.test").info("query received")
+
+    assert "Request URL" not in stream.getvalue()
+    assert "HTTP Request" not in stream.getvalue()
+    assert "query received" in stream.getvalue()
+
+
+def test_configure_logging_still_surfaces_library_warnings(
+    isolated_root_logger: logging.Logger,
+) -> None:
+    """A throttled or retried Azure call must remain visible; only INFO chatter is dropped."""
+    stream = io.StringIO()
+    testee.configure_logging(level="INFO", stream=stream)
+
+    logging.getLogger("azure.core.pipeline.policies.retry").warning("retrying after 429")
+
+    assert "retrying after 429" in stream.getvalue()
+
+
+def test_configure_logging_keeps_the_openai_retry_notice(
+    isolated_root_logger: logging.Logger,
+) -> None:
+    """The OpenAI SDK announces retries at INFO; silencing it would hide a degraded run."""
+    stream = io.StringIO()
+    testee.configure_logging(level="INFO", stream=stream)
+
+    logging.getLogger("openai._base_client").info("Retrying request to /embeddings in 0.5 seconds")
+
+    assert "Retrying request" in stream.getvalue()
+
+
+def test_configure_logging_lets_debug_reenable_library_logs(
+    isolated_root_logger: logging.Logger,
+) -> None:
+    """LOG_LEVEL=DEBUG is an explicit request to see the HTTP traffic, not a level bump."""
+    stream = io.StringIO()
+    testee.configure_logging(level="INFO", stream=stream)
+    testee.configure_logging(level="DEBUG", stream=stream)
+
+    logging.getLogger("httpx").debug("HTTP Request: GET ...")
+
+    assert "HTTP Request" in stream.getvalue(), "an earlier INFO call must not pin it to WARNING"

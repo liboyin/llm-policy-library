@@ -38,6 +38,16 @@ _RESERVED_PAYLOAD_KEYS: Final[frozenset[str]] = frozenset(
     {"timestamp", "level", "logger", "message", "correlation_id", "exception"}
 )
 
+# Libraries that log a line — or, for the Azure SDK, a full request and response
+# header dump — on every HTTP call they make. At INFO they emit an order of
+# magnitude more lines than the application does, burying the request audit
+# trail this module exists to produce. Their warnings and errors still surface.
+#
+# `openai` is deliberately absent: its per-request chatter is DEBUG (and its
+# HTTP traffic surfaces through `httpx` anyway), while "Retrying request to ..."
+# is INFO. Silencing it would hide a run that only succeeded after retrying.
+_NOISY_LIBRARY_LOGGERS: Final[tuple[str, ...]] = ("azure", "httpx")
+
 
 def get_correlation_id() -> str:
     """Return the correlation ID bound to the current context.
@@ -127,6 +137,9 @@ def configure_logging(level: str = "INFO", stream: TextIO | None = None) -> None
     Replaces any existing root handlers, so calling this more than once (for
     example under a reloading server) does not duplicate log lines.
 
+    Chatty HTTP libraries are pinned to WARNING unless the root level is DEBUG,
+    in which case an operator has explicitly asked to see everything.
+
     Args:
         level: Root log level name, e.g. "INFO".
         stream: Destination for log lines. Defaults to stdout, the conventional
@@ -138,3 +151,9 @@ def configure_logging(level: str = "INFO", stream: TextIO | None = None) -> None
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(level)
+
+    # NOTSET restores inheritance from the root logger, so switching back to
+    # DEBUG on a later call re-enables the libraries this silenced.
+    library_level = logging.NOTSET if root.level <= logging.DEBUG else logging.WARNING
+    for name in _NOISY_LIBRARY_LOGGERS:
+        logging.getLogger(name).setLevel(library_level)

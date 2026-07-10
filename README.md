@@ -71,6 +71,10 @@ with correlation_context() as correlation_id:
 The correlation ID lives in a `ContextVar`, so it survives `await` boundaries and stays
 isolated between concurrently served requests.
 
+The Azure SDK logs a full request/response header dump on every HTTP call, and `httpx` a
+line per request, both at INFO. They are pinned to WARNING so they cannot bury the audit
+trail; setting `LOG_LEVEL=DEBUG` restores them for troubleshooting.
+
 ## Tests and static analysis
 
 All three must pass before any commit:

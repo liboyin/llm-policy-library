@@ -1,0 +1,69 @@
+{
+  "description": "Hand-labeled evaluation golden set for the NIST SP 800-53 Rev 5 policy library. Each on-topic query lists the control IDs a compliance reviewer would expect the pipeline to retrieve, graded 2 (directly on point) or 1 (relevant/supporting). Labels were checked against the live catalog (decision D1); every ID exists as a live, non-withdrawn control. The two fallback queries are deliberately out of domain and must return the safe fallback. The first four queries are the use cases named verbatim in TASK.md.",
+  "label_scale": {
+    "2": "Directly on point -- a control a reviewer would certainly cite for this question.",
+    "1": "Relevant supporting control -- reasonable to retrieve, secondary to the primary controls."
+  },
+  "queries": [
+    {
+      "query": "What controls apply to API security?",
+      "relevant": {"sc-7": 2, "sc-8": 2, "ac-4": 2, "ac-3": 1, "ia-2": 1}
+    },
+    {
+      "query": "How should sensitive data be protected in cloud systems?",
+      "relevant": {"sc-28": 2, "sc-8": 2, "sc-13": 2, "sc-12": 1}
+    },
+    {
+      "query": "Summarise requirements for access control",
+      "relevant": {"ac-2": 2, "ac-3": 2, "ac-6": 2, "ac-1": 1, "ac-17": 1}
+    },
+    {
+      "query": "What policies relate to logging and monitoring?",
+      "relevant": {"au-2": 2, "au-6": 2, "au-12": 2, "si-4": 2, "au-3": 1, "ca-7": 1}
+    },
+    {
+      "query": "What are the requirements for multi-factor authentication?",
+      "relevant": {"ia-2": 2, "ia-2.1": 2, "ia-2.2": 2, "ia-5": 1}
+    },
+    {
+      "query": "How should cryptographic keys be established and managed?",
+      "relevant": {"sc-12": 2, "sc-13": 1, "sc-17": 1}
+    },
+    {
+      "query": "What controls govern incident response and reporting?",
+      "relevant": {"ir-4": 2, "ir-6": 2, "ir-8": 2, "ir-5": 1}
+    },
+    {
+      "query": "What are the requirements for security awareness and role-based training?",
+      "relevant": {"at-2": 2, "at-3": 2, "at-4": 1}
+    },
+    {
+      "query": "How should removable media and portable storage devices be controlled?",
+      "relevant": {"mp-5": 2, "mp-7": 2, "mp-2": 1, "mp-4": 1}
+    },
+    {
+      "query": "What controls address vulnerability scanning and flaw remediation?",
+      "relevant": {"ra-5": 2, "si-2": 2, "si-3": 1}
+    },
+    {
+      "query": "What are the contingency planning and system backup requirements?",
+      "relevant": {"cp-2": 2, "cp-9": 2, "cp-10": 1}
+    },
+    {
+      "query": "How is least privilege enforced and separation of duties maintained?",
+      "relevant": {"ac-6": 2, "ac-5": 2, "ac-6.1": 1}
+    },
+    {
+      "query": "What controls apply to configuration management and baseline configurations?",
+      "relevant": {"cm-2": 2, "cm-6": 2, "cm-3": 1, "cm-7": 1}
+    },
+    {
+      "query": "What is the capital of France?",
+      "expect_fallback": true
+    },
+    {
+      "query": "How do I bake a chocolate cake?",
+      "expect_fallback": true
+    }
+  ]
+}

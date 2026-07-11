@@ -8,9 +8,9 @@ citation-bearing answer with Azure OpenAI.
 See [TASK.md](TASK.md) for the goals this project implements and
 [TODO.md](TODO.md) for the phased execution plan and the resolved design decisions.
 
-> **Status:** serving (Phase 4). Ingestion, the three agents, the orchestration workflow, the
-> HTTP API, and the CLI are in place; evaluation, the load test, and the architecture doc land
-> in later phases.
+> **Status:** evaluated (Phase 5). Ingestion, the three agents, the orchestration workflow, the
+> HTTP API, the CLI, and the evaluation harness are in place; the load test and the architecture
+> doc land in later phases.
 
 ## Project structure
 
@@ -28,7 +28,9 @@ See [TASK.md](TASK.md) for the goals this project implements and
 | [llm_policy_library/orchestrator.py](llm_policy_library/orchestrator.py) | The Agent Framework workflow wiring the three together |
 | [llm_policy_library/api.py](llm_policy_library/api.py) | FastAPI service — `POST /query`, `GET /healthz` |
 | [llm_policy_library/cli.py](llm_policy_library/cli.py) | `python -m llm_policy_library.cli "question"` — same pipeline, pretty-printed |
-| [samples/](samples/) | Sample execution output: raw pipeline results and the JSON audit log |
+| [llm_policy_library/evaluation.py](llm_policy_library/evaluation.py) | Evaluation harness: golden-set metrics, citation check, Markdown report |
+| [evaluation/](evaluation/) | The golden set (`golden_set.json`) and the runner (`run_eval.py`) |
+| [samples/](samples/) | Sample execution output: raw pipeline results, audit logs, and the evaluation report |
 | [tests/](tests/) | Unit tests; no test performs a live Azure call |
 | [docs/azure-setup.md](docs/azure-setup.md) | How to provision the Azure resources this project reads |
 | [.env.example](.env.example) | Template for the environment variables below |
@@ -137,7 +139,7 @@ costs little, because each document's embedded text is prefixed with its control
 
 ## Sample output
 
-[samples/](samples/) holds one run of three questions — two on-topic, one deliberately not:
+[samples/](samples/) holds a smoke test of three questions — two on-topic, one deliberately not:
 
 - `smoke_test.json` — the raw `PipelineResult` for each: plan, per-step hits with scores,
   the deduplicated grounding set, and the answer with its citations.
@@ -145,6 +147,19 @@ costs little, because each document's embedded text is prefixed with its control
 
 "What is the capital of France?" retrieves nothing above the floor and returns the safe
 fallback without ever reaching a chat model.
+
+It also holds the evaluation output over the 15-query golden set (see below):
+
+- `evaluation_report.md` — the aggregate table and a per-query section (plan, retrieved
+  controls, both metric views, judge scores, citations, answer).
+- `evaluation_transcripts.json` — the same, machine-readable, for every query.
+
+In the committed run, answer quality is strong — groundedness 5.0/5, relevance 5.0/5, and
+**zero invented citations** across all 13 on-topic queries — and both out-of-domain queries
+returned the safe fallback. Retrieval scored ~0.54 precision / ~0.71 recall on the base-family
+view (~0.27 / ~0.51 exact-ID); the gap is the retriever surfacing specific control enhancements
+above the broad base controls the golden set labels. Because the pipeline is a reasoning model,
+re-running produces slightly different numbers.
 
 ## Setup
 
@@ -180,6 +195,27 @@ python -m llm_policy_library.cli "What controls apply to API security?"
 
 prints the plan, the retrieved controls with their scores, and the final answer with its
 citations. Its structured logs go to stderr, so stdout carries only the report.
+
+## Running the evaluation
+
+```bash
+python evaluation/run_eval.py   # runs the golden set through the live pipeline + judges
+```
+
+The harness runs every query in [evaluation/golden_set.json](evaluation/golden_set.json)
+through the pipeline and scores four things: retrieval (precision / recall / F1, plus
+NDCG@3 / XDCG@3 / fidelity from the Azure AI `DocumentRetrievalEvaluator`), answer quality
+(groundedness and relevance from LLM-judge evaluators on the same chat deployment), citation
+validity (every inline citation must have been retrieved), and the safe fallback on
+out-of-domain queries. It writes [samples/evaluation_report.md](samples/evaluation_report.md)
+and `samples/evaluation_transcripts.json`.
+
+Precision/recall/F1 are reported two ways. **Exact-ID** credits only a retrieved control
+whose ID matches a labelled one. **Base-family** also credits a retrieved *enhancement* whose
+base control was labelled — `ia-2.6` counts toward the `ia-2` need — because in NIST SP 800-53
+an enhancement is a more specific form of its base control. The exact-ID column is a strict
+lower bound; the base-family column is the fairer measure for this hierarchical catalog, since
+the semantic retriever ranks specific enhancements above the broad base control.
 
 ## Configuration
 

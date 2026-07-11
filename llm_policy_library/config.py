@@ -15,7 +15,12 @@ from typing import Final, Literal
 from pydantic import Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DEFAULT_ENV_FILE = ".env"
+# Resolved once, relative to this file rather than the process's working
+# directory. `load_settings()` is called from `api.py`'s `lifespan` and
+# `cli.py`'s `run()`, both entered exactly once per process, but a relative
+# ".env" would still silently read the wrong file (or none) if uvicorn or the
+# CLI is launched from outside the repo root.
+DEFAULT_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 # The Azure OpenAI API versions this project talks. Pinned: a query vector is
 # only comparable to the document vectors already in the index if both came from

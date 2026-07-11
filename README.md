@@ -8,9 +8,9 @@ citation-bearing answer with Azure OpenAI.
 See [TASK.md](TASK.md) for the goals this project implements and
 [TODO.md](TODO.md) for the phased execution plan and the resolved design decisions.
 
-> **Status:** multi-agent pipeline (Phase 3). Ingestion, the three agents, and the
-> orchestration workflow are in place; the HTTP API, evaluation, and the load test land in
-> later phases.
+> **Status:** serving (Phase 4). Ingestion, the three agents, the orchestration workflow, the
+> HTTP API, and the CLI are in place; evaluation, the load test, and the architecture doc land
+> in later phases.
 
 ## Project structure
 
@@ -26,6 +26,8 @@ See [TASK.md](TASK.md) for the goals this project implements and
 | [llm_policy_library/agents/retrieval.py](llm_policy_library/agents/retrieval.py) | Retrieval Agent — searches the index and applies the relevance floor |
 | [llm_policy_library/agents/response.py](llm_policy_library/agents/response.py) | Response Agent — writes the grounded answer, or the safe fallback |
 | [llm_policy_library/orchestrator.py](llm_policy_library/orchestrator.py) | The Agent Framework workflow wiring the three together |
+| [llm_policy_library/api.py](llm_policy_library/api.py) | FastAPI service — `POST /query`, `GET /healthz` |
+| [llm_policy_library/cli.py](llm_policy_library/cli.py) | `python -m llm_policy_library.cli "question"` — same pipeline, pretty-printed |
 | [samples/](samples/) | Sample execution output: raw pipeline results and the JSON audit log |
 | [tests/](tests/) | Unit tests; no test performs a live Azure call |
 | [docs/azure-setup.md](docs/azure-setup.md) | How to provision the Azure resources this project reads |
@@ -155,7 +157,29 @@ cp .env.example .env    # then fill in the values
 
 Provision the Azure resources first — [docs/azure-setup.md](docs/azure-setup.md) walks
 through the portal steps, the tier trade-offs, and where to find each endpoint and key.
-`.env` is gitignored and must never be committed.
+`.env` is gitignored and must never be committed. `.env` is resolved relative to the repo
+root, not the process's working directory, so both commands below work from anywhere.
+
+## Running the service and CLI
+
+Both wrap the same `PolicyPipeline` (`llm_policy_library.orchestrator`) — there is exactly
+one code path from a question to a grounded answer, whether it arrives over HTTP or the CLI.
+
+```bash
+uvicorn llm_policy_library.api:app   # POST /query {"query": "..."}, GET /healthz
+```
+
+`POST /query` returns `{answer, citations, is_fallback, plan, retrieved, latency_ms}` and
+echoes the request's correlation ID as an `X-Correlation-ID` response header. A pipeline
+failure (a planner/response error, or an Azure outage) answers with `502` and a fixed safe
+message, never a stack trace; a missing or blank `query` answers with `422`.
+
+```bash
+python -m llm_policy_library.cli "What controls apply to API security?"
+```
+
+prints the plan, the retrieved controls with their scores, and the final answer with its
+citations. Its structured logs go to stderr, so stdout carries only the report.
 
 ## Configuration
 
@@ -199,7 +223,10 @@ with correlation_context() as correlation_id:
 ```
 
 The correlation ID lives in a `ContextVar`, so it survives `await` boundaries and stays
-isolated between concurrently served requests.
+isolated between concurrently served requests. The API also echoes it back as an
+`X-Correlation-ID` response header, so a caller reporting a problem can quote the ID that
+locates it in the log. Logs go to stdout everywhere except the CLI, which writes them to
+stderr so they don't interleave with the report it prints to stdout.
 
 Every query writes one line per hop — plan, each retrieval step, the answer with its
 citations, and the end-to-end latency — all sharing the request's correlation ID.

@@ -46,6 +46,12 @@ def write_env_file(directory: Path, values: dict[str, str]) -> Path:
     return path
 
 
+def test_default_env_file_is_resolved_relative_to_the_repo_not_the_cwd() -> None:
+    """A relative ".env" would silently read the wrong file if launched from elsewhere."""
+    assert testee.DEFAULT_ENV_FILE.is_absolute()
+    assert (testee.DEFAULT_ENV_FILE.parent / "pyproject.toml").is_file()
+
+
 def test_settings_defaults_encode_the_task_requirements(required_env: None) -> None:
     """Defaults retrieve 3-5 docs, rank semantically, and minimize reasoning effort."""
     settings = testee.load_settings(env_file=None)

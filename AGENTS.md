@@ -33,7 +33,7 @@ The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RE
 - You MUST manually review per-file test coverage aided by `--cov-report=term-missing` to meet the ≥80% requirement.
 - Order test functions to match the source file's function order.
 - Import the module under test as `import llm_policy_library.my_module as testee`; call functions as `testee.function_name` and mock attributes via `patch.object(testee, 'attribute', ...)`.
-- After any code change, all of the following unit tests and static analysis MUST pass:
+- After any code change, all of the following unit tests and static analysis MUST pass before sending the change for review:
 
 ```
 pytest
@@ -43,7 +43,11 @@ ruff check .
 
 # Review Guidelines
 
-Before committing a change that touches code, tests, or configuration, you MUST perform an adversarial review on your changes. A documentation-only change does not need one; the user reviews it.
+All non-trivial changes that touch code, test, or configuration MUST go through adversarial reviews before commit. (Documentation-only changes are exempted.)
+
+Use the `/adversarial-review` skill (`.claude/skills/adversarial-review/`) as a function call: provide the context of the change — its purpose, the in-scope paths, known-unrelated dirty paths, and out-of-scope items the user has already accepted — and expect a triaged review report without code changes.
+
+The reviewer should scrutinize the change with the following questions:
 
 - Does it achieve the intended purpose?
 - Is it bug-free?
@@ -53,9 +57,13 @@ Before committing a change that touches code, tests, or configuration, you MUST 
 - Are there design choices that make testing or validation unnecessarily difficult?
 - Anything else a senior reviewer would push back on? (Use judgment)
 
-The review MUST be performed by the `/adversarial-review` skill (`.claude/skills/adversarial-review/`), which puts the questions above to independent reviewers in subagents, verifies each finding against the source, and triages the result. The reviewers MUST span at least two model families, since a model shares the blind spots of the one that wrote the code. Prefer Claude Fable 5 as one of them.
+The main agent remains accountable for the execute-review loop:
 
-Fix trivial issues. For others, stop and confirm with the user.
+1. Implement the requested change.
+2. Call the review skill on the current dirty tree.
+3. Fix blocking findings, plus any non-blocking findings whose fix is trivial.
+4. Repeat from step 2 until the skill reports no blocking findings.
+5. Ask the user to decide the remaining non-blocking findings, if any: fix, defer, or ignore.
 
 # Version Control Guidelines
 

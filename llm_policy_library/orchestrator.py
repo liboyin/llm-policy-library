@@ -113,7 +113,10 @@ class RetrievalExecutor(Executor):
         logger.info(
             "plan retrieved",
             extra={
-                "steps": len(results),
+                # Named so no key holds a count in one audit line and a list in
+                # another: `step_count`/`document_count` are always ints, and
+                # the `documents` list of IDs is the only `documents` key.
+                "step_count": len(results),
                 "documents": [document.id for document in documents],
             },
         )
@@ -230,7 +233,7 @@ class PolicyPipeline:
                 "query": query,
                 "answer": result.response.answer,
                 "latency_ms": round(elapsed_ms, 1),
-                "documents": len(result.documents),
+                "document_count": len(result.documents),
                 "citations": result.response.citations,
                 "is_fallback": result.response.is_fallback,
             },

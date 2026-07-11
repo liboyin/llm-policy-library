@@ -7,13 +7,16 @@ into a `PipelineResult`. Every hop is a validated Pydantic model rather than
 free text, which is what makes the orchestration inspectable — the audit log and
 the evaluation harness both read these objects, not prose.
 
-`QueryPlan` doubles as the Planner's structured-output JSON schema, so its field
-descriptions are prompt surface: the chat model sees them, and they must not
-contradict `agents.planner.PLANNER_INSTRUCTIONS`. It deliberately carries no
-`min_length`/`max_length` on `steps`. The step count is an invariant of the
-Planner, not of the wire format, and enforcing it here would turn an over-eager
-model response into a `ValidationError` deep inside the chat client instead of a
-value the Planner can clamp.
+The Planner's chat model does not emit a `QueryPlan` directly. Its structured
+output is a `PlannerOutput` — the searches, and nothing else — which the Planner
+combines with the known question to build the `QueryPlan`. Keeping the two apart
+means the model never has to reproduce the question only for the Planner to
+discard its copy. `PlannerOutput.steps`' field descriptions are therefore the
+prompt surface, and must not contradict `agents.planner.PLANNER_INSTRUCTIONS`.
+`PlannerOutput` deliberately carries no `min_length`/`max_length`: the step count
+is an invariant of the Planner, not of the wire format, and enforcing it here
+would turn an over-eager model response into a `ValidationError` deep inside the
+chat client instead of a value the Planner can clamp.
 """
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -39,21 +42,44 @@ class PlanStep(BaseModel):
     purpose: str = Field(description="What this step is meant to find, in one sentence.")
 
 
-class QueryPlan(BaseModel):
-    """A user question decomposed into search steps.
+class PlannerOutput(BaseModel):
+    """The Planner chat model's structured output: the searches, nothing else.
+
+    This is the Planner's `response_format` JSON schema, so `steps`' field
+    description is prompt surface the model reads. It omits the user's question:
+    that is a known input the Planner supplies itself, and requiring the model to
+    echo it would spend output tokens on a value the Planner immediately discards.
 
     Attributes:
-        original_query: The user's question, verbatim. The Planner overwrites
-            whatever the model returns here, so it is always the true input.
-        steps: The searches to run, one to three of them.
+        steps: The searches the model proposes, before the Planner clamps them.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    original_query: str = Field(description="The user's question, repeated verbatim.")
+    # No step count in the description: `agents.planner.PLANNER_INSTRUCTIONS` is
+    # the one prompt surface that states the limit, interpolated from
+    # `MAX_PLAN_STEPS`. A number here would be a second source that drifts from it.
     steps: list[PlanStep] = Field(
-        description="One to three searches that together answer the question."
+        description="The searches that together answer the question."
     )
+
+
+class QueryPlan(BaseModel):
+    """A user question decomposed into search steps.
+
+    Built by the Planner from the question and a `PlannerOutput`; not the chat
+    model's own output, so its fields are data, not prompt surface.
+
+    Attributes:
+        original_query: The user's question, verbatim — the true input, set by
+            the Planner rather than echoed by the model.
+        steps: The searches to run, after clamping to the Planner's limit.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    original_query: str
+    steps: list[PlanStep]
 
 
 class RetrievedDocument(BaseModel):

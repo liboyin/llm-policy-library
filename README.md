@@ -79,7 +79,7 @@ one produced:
 ```
 "What controls apply to API security?"
         │
-        ▼  Planner Agent      chat model, QueryPlan structured output
+        ▼  Planner Agent      chat model, PlannerOutput structured output
    QueryPlan(original_query, steps=[PlanStep(search_query, purpose), ...])
         │
         ▼  Retrieval Agent    no chat model; embed -> search -> apply relevance floor
@@ -89,9 +89,10 @@ one produced:
    PipelineResult(plan, results, documents, response=GroundedResponse(...))
 ```
 
-- **Planner** answers with a `QueryPlan` JSON schema rather than prose that would have to be
-  parsed. It may plan 1–3 steps; the step count and the verbatim `original_query` are
-  enforced in code, not trusted to the model.
+- **Planner** answers with a `PlannerOutput` JSON schema (the searches alone) rather than
+  prose that would have to be parsed, and the Planner assembles the `QueryPlan` from that
+  and the known question. It may plan 1–3 steps; the step count is enforced in code, and
+  `original_query` is set from the true input rather than echoed by the model.
 - **Retrieval** runs the steps concurrently, so a three-step plan costs roughly one step's
   latency. Results below the relevance floor are dropped, and the survivors are
   deduplicated across steps, keeping each control's best score.

@@ -8,7 +8,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 import llm_policy_library.agents.planner as testee
-from llm_policy_library.models import PlanStep, QueryPlan
+from llm_policy_library.models import PlannerOutput, PlanStep
 
 
 def make_step(search_query: str) -> PlanStep:
@@ -42,14 +42,14 @@ def planner_returning(value: Any) -> MagicMock:
     return agent
 
 
-def test_build_planner_requests_the_query_plan_schema_and_configured_effort() -> None:
-    """Structured output is what replaces the temperature/seed knobs reasoning models reject."""
+def test_build_planner_requests_the_searches_only_schema_and_configured_effort() -> None:
+    """The model's schema is PlannerOutput (searches only), so it never echoes the question."""
     chat_client = MagicMock()
 
     agent = testee.build_planner(chat_client, "minimal")
 
     options = agent.default_options
-    assert options["response_format"] is QueryPlan
+    assert options["response_format"] is PlannerOutput
     assert options["reasoning"] == {"effort": "minimal"}
 
 
@@ -84,11 +84,9 @@ def test_clamp_steps_keeps_a_plan_already_within_the_limit() -> None:
     assert testee.clamp_steps(steps, limit=3) == steps
 
 
-async def test_plan_query_overwrites_the_models_echo_of_the_question() -> None:
-    """A paraphrased `original_query` would misstate what the audit trail says was asked."""
-    agent = planner_returning(
-        QueryPlan(original_query="a paraphrase the model invented", steps=[make_step("q")])
-    )
+async def test_plan_query_sets_original_query_to_the_true_input() -> None:
+    """The model never returns the question, so the Planner sets it from the real input."""
+    agent = planner_returning(PlannerOutput(steps=[make_step("q")]))
 
     plan = await testee.plan_query(agent, "What controls apply to API security?")
 
@@ -98,7 +96,7 @@ async def test_plan_query_overwrites_the_models_echo_of_the_question() -> None:
 async def test_plan_query_clamps_an_over_eager_plan() -> None:
     """The model is asked for 1-3 steps; the limit is enforced here, not trusted to it."""
     agent = planner_returning(
-        QueryPlan(original_query="q", steps=[make_step(f"q{index}") for index in range(6)])
+        PlannerOutput(steps=[make_step(f"q{index}") for index in range(6)])
     )
 
     plan = await testee.plan_query(agent, "q")
@@ -106,9 +104,28 @@ async def test_plan_query_clamps_an_over_eager_plan() -> None:
     assert len(plan.steps) == testee.MAX_PLAN_STEPS
 
 
+async def test_plan_query_logs_each_step_with_its_purpose(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`PlanStep.purpose` is recorded for the audit trail, so it must reach the log line."""
+    agent = planner_returning(
+        PlannerOutput(
+            steps=[PlanStep(search_query="access control", purpose="find the AC family")]
+        )
+    )
+
+    with caplog.at_level(logging.INFO, logger=testee.__name__):
+        await testee.plan_query(agent, "q")
+
+    record = next(record for record in caplog.records if record.message == "query planned")
+    assert getattr(record, "steps") == [
+        {"search_query": "access control", "purpose": "find the AC family"}
+    ]
+
+
 async def test_plan_query_passes_the_users_question_to_the_agent() -> None:
     """The Planner reasons about the question itself, not a preprocessed form of it."""
-    agent = planner_returning(QueryPlan(original_query="q", steps=[make_step("q")]))
+    agent = planner_returning(PlannerOutput(steps=[make_step("q")]))
 
     await testee.plan_query(agent, "How is sensitive data protected?")
 
@@ -125,7 +142,7 @@ async def test_plan_query_raises_when_the_model_returns_no_plan() -> None:
 
 async def test_plan_query_raises_when_the_plan_has_no_steps() -> None:
     """A stepless plan retrieves nothing, which would silently look like a safe fallback."""
-    agent = planner_returning(QueryPlan(original_query="q", steps=[]))
+    agent = planner_returning(PlannerOutput(steps=[]))
 
     with pytest.raises(testee.PlannerError, match="no steps"):
         await testee.plan_query(agent, "q")
@@ -134,7 +151,7 @@ async def test_plan_query_raises_when_the_plan_has_no_steps() -> None:
 async def test_plan_query_raises_when_every_step_has_a_blank_search_query() -> None:
     """A plan of blank queries is a planning failure, not an embeddings HTTP 400."""
     agent = planner_returning(
-        QueryPlan(original_query="q", steps=[PlanStep(search_query=" ", purpose="p")])
+        PlannerOutput(steps=[PlanStep(search_query=" ", purpose="p")])
     )
 
     with pytest.raises(testee.PlannerError, match="no steps"):
@@ -146,7 +163,7 @@ async def test_plan_query_warns_when_the_model_exceeds_the_step_limit(
 ) -> None:
     """Silently clamping would hide a prompt or model regression, as an invented citation would."""
     agent = planner_returning(
-        QueryPlan(original_query="q", steps=[make_step(f"q{index}") for index in range(5)])
+        PlannerOutput(steps=[make_step(f"q{index}") for index in range(5)])
     )
 
     with caplog.at_level(logging.WARNING, logger=testee.__name__):

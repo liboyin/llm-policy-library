@@ -1,20 +1,20 @@
 """Planner Agent: decompose a policy question into searches.
 
 The Planner is the only agent whose output shape is enforced by the model itself
-— it answers with a `QueryPlan` JSON schema (Azure OpenAI structured outputs)
+— it answers with a `PlannerOutput` JSON schema (Azure OpenAI structured outputs)
 rather than prose that would have to be parsed. Together with a pinned
 deployment version and the lowest reasoning effort the model accepts, that is
 what "deterministic configuration" means here: the deployable Azure OpenAI chat
 models are reasoning models and reject `temperature`, `top_p`, and `seed`
 outright, so the plan's *shape* is guaranteed even though its wording is not.
 
-Two invariants are enforced in code rather than trusted to the model:
-
-* `original_query` is overwritten with the user's verbatim question. A model
-  that paraphrases it would silently change what the audit trail says was asked.
-* The plan is clamped to `MAX_PLAN_STEPS`. Every extra step is a search and an
-  embedding call against the p90 latency budget, and an over-eager plan is a far
-  more likely failure than a malformed one.
+The model returns only the searches; the Planner supplies the question itself
+when it builds the `QueryPlan`. That is both cheaper — the model spends no output
+tokens echoing a question the Planner already has — and safer, since there is no
+model-written copy of the query that could paraphrase what the audit trail says
+was asked. The one thing the model can still overdo is the step count, so the
+plan is clamped to `MAX_PLAN_STEPS`: every extra step is a search and an
+embedding call against the p90 latency budget.
 """
 
 import logging
@@ -25,7 +25,7 @@ from agent_framework.openai import OpenAIChatClient, OpenAIChatOptions
 from pydantic import ValidationError
 
 from llm_policy_library.config import ReasoningEffort
-from llm_policy_library.models import PlanStep, QueryPlan
+from llm_policy_library.models import PlannerOutput, PlanStep, QueryPlan
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +55,9 @@ Each `purpose` states in one sentence what the step is meant to find.
 """
 
 # The Planner is the only agent that constrains the model's output shape, so it
-# is the only one whose options carry a `response_format`.
-PlannerOptions = OpenAIChatOptions[QueryPlan]
+# is the only one whose options carry a `response_format` — and that schema is
+# `PlannerOutput`, the searches alone, not the full `QueryPlan`.
+PlannerOptions = OpenAIChatOptions[PlannerOutput]
 PlannerAgent = Agent[PlannerOptions]
 
 
@@ -80,7 +81,7 @@ def build_planner(
     # is the lowest effort gpt-5-mini accepts (it rejects "none" with a 400).
     # Typing the value loosely beats vendoring a literal that is missing a member.
     reasoning: Any = {"effort": reasoning_effort}
-    options: PlannerOptions = {"response_format": QueryPlan, "reasoning": reasoning}
+    options: PlannerOptions = {"response_format": PlannerOutput, "reasoning": reasoning}
     return Agent(chat_client, PLANNER_INSTRUCTIONS, name="planner", default_options=options)
 
 
@@ -145,7 +146,10 @@ async def plan_query(agent: PlannerAgent, query: str) -> QueryPlan:
         # event as the Response Agent citing a control it was never given.
         logger.warning(
             "planner exceeded the step limit",
-            extra={"query": query, "planned_steps": len(usable), "limit": MAX_PLAN_STEPS},
+            # `usable_steps`, not `planned_steps`: this counts the steps carrying
+            # a query, whereas the "query planned" line's `planned_steps` is the
+            # raw model count. Distinct quantities must not share a log key.
+            extra={"query": query, "usable_steps": len(usable), "limit": MAX_PLAN_STEPS},
         )
 
     plan = QueryPlan(original_query=query, steps=clamp_steps(usable))
@@ -155,7 +159,13 @@ async def plan_query(agent: PlannerAgent, query: str) -> QueryPlan:
             "query": query,
             "planned_steps": len(planned.steps),
             "kept_steps": len(plan.steps),
-            "search_queries": [step.search_query for step in plan.steps],
+            # Both fields of each kept step: the query drives retrieval, and the
+            # purpose is the model's stated reason for it — the only record of
+            # *why* a search ran, which `PlanStep.purpose` exists to preserve.
+            "steps": [
+                {"search_query": step.search_query, "purpose": step.purpose}
+                for step in plan.steps
+            ],
         },
     )
     return plan

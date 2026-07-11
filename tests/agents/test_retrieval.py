@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from annotated_types import Le
 
 import llm_policy_library.agents.retrieval as testee
 from llm_policy_library.config import Settings
@@ -115,6 +116,18 @@ def async_pager(rows: list[dict[str, Any]]) -> Any:
             return _gen()
 
     return _Pager()
+
+
+def test_retrieval_top_k_bound_matches_the_candidate_window() -> None:
+    """A `retrieval_top_k` above the reranked candidate window silently returns fewer,
+    so the config bound must track `VECTOR_CANDIDATE_COUNT`, not a divorced literal."""
+    le_bounds = [
+        constraint.le
+        for constraint in Settings.model_fields["retrieval_top_k"].metadata
+        if isinstance(constraint, Le)
+    ]
+
+    assert le_bounds == [testee.VECTOR_CANDIDATE_COUNT]
 
 
 def test_scoring_mode_gates_on_the_reranker_score_when_the_ranker_is_on() -> None:

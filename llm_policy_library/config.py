@@ -93,7 +93,9 @@ class Settings(BaseSettings):
     # Capped at the candidate window retrieval fetches and the semantic ranker
     # reranks (`agents.retrieval.VECTOR_CANDIDATE_COUNT`). Asking for more would
     # silently return fewer, since rows outside that window carry no reranker
-    # score and are dropped as unscored.
+    # score and are dropped as unscored. The bound is a literal because importing
+    # that constant here would cycle (retrieval imports config); a test in
+    # test_retrieval pins the two equal so they cannot silently diverge.
     retrieval_top_k: int = Field(default=5, ge=1, le=50)
 
     # Two thresholds, because the ranker toggle changes which score retrieval

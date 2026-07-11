@@ -8,8 +8,9 @@ citation-bearing answer with Azure OpenAI.
 See [TASK.md](TASK.md) for the goals this project implements and
 [TODO.md](TODO.md) for the phased execution plan and the resolved design decisions.
 
-> **Status:** ingestion (Phase 2). Configuration, structured logging, and the Azure AI
-> Search index are in place; the agents, the API, and evaluation land in later phases.
+> **Status:** multi-agent pipeline (Phase 3). Ingestion, the three agents, and the
+> orchestration workflow are in place; the HTTP API, evaluation, and the load test land in
+> later phases.
 
 ## Project structure
 
@@ -20,6 +21,12 @@ See [TASK.md](TASK.md) for the goals this project implements and
 | [llm_policy_library/dataset.py](llm_policy_library/dataset.py) | Fetches and parses the NIST SP 800-53 OSCAL catalog into `PolicyRecord`s |
 | [llm_policy_library/search_index.py](llm_policy_library/search_index.py) | Azure AI Search index schema (hybrid + semantic) |
 | [llm_policy_library/ingest.py](llm_policy_library/ingest.py) | `python -m llm_policy_library.ingest` — rebuilds the index |
+| [llm_policy_library/models.py](llm_policy_library/models.py) | The typed messages the agents exchange |
+| [llm_policy_library/agents/planner.py](llm_policy_library/agents/planner.py) | Planner Agent — decomposes a question into 1–3 searches |
+| [llm_policy_library/agents/retrieval.py](llm_policy_library/agents/retrieval.py) | Retrieval Agent — searches the index and applies the relevance floor |
+| [llm_policy_library/agents/response.py](llm_policy_library/agents/response.py) | Response Agent — writes the grounded answer, or the safe fallback |
+| [llm_policy_library/orchestrator.py](llm_policy_library/orchestrator.py) | The Agent Framework workflow wiring the three together |
+| [samples/](samples/) | Sample execution output: raw pipeline results and the JSON audit log |
 | [tests/](tests/) | Unit tests; no test performs a live Azure call |
 | [docs/azure-setup.md](docs/azure-setup.md) | How to provision the Azure resources this project reads |
 | [.env.example](.env.example) | Template for the environment variables below |
@@ -63,6 +70,79 @@ letters, digits, dash, underscore, and equal sign, so the enhancement ID `ac-2.1
 a key; `key` holds the dot-free encoding `ac-2_1` while `id` keeps the exact ID that
 answers cite and the golden set labels.
 
+## The multi-agent pipeline
+
+Three agents run as a Microsoft Agent Framework `Workflow`. Each edge is a validated
+Pydantic model, not a conversation, so a stage cannot quietly reinterpret what the previous
+one produced:
+
+```
+"What controls apply to API security?"
+        │
+        ▼  Planner Agent      chat model, QueryPlan structured output
+   QueryPlan(original_query, steps=[PlanStep(search_query, purpose), ...])
+        │
+        ▼  Retrieval Agent    no chat model; embed -> search -> apply relevance floor
+   RetrievalOutcome(plan, results=[RetrievalResult, ...], documents=[RetrievedDocument, ...])
+        │
+        ▼  Response Agent     chat model, prose with inline [ac-2] citations
+   PipelineResult(plan, results, documents, response=GroundedResponse(...))
+```
+
+- **Planner** answers with a `QueryPlan` JSON schema rather than prose that would have to be
+  parsed. It may plan 1–3 steps; the step count and the verbatim `original_query` are
+  enforced in code, not trusted to the model.
+- **Retrieval** runs the steps concurrently, so a three-step plan costs roughly one step's
+  latency. Results below the relevance floor are dropped, and the survivors are
+  deduplicated across steps, keeping each control's best score.
+- **Response** may only cite controls it was given. An empty grounding set short-circuits to
+  the safe fallback *without calling a chat model*, and any citation in the answer that was
+  not retrieved is excluded from `citations` and logged as a grounding violation.
+
+An Agent Framework `Workflow` holds the state of one run and rejects a second concurrent
+one, so `answer_query` builds a fresh workflow per query (0.2 ms, against a multi-second
+pipeline). The executors — and the agents and Azure clients they hold — are shared. The
+clients themselves are opened once per process by `open_pipeline`, never per request.
+
+### Retrieval: two search modes, two score scales
+
+`AZURE_SEARCH_SEMANTIC_RANKER` chooses how retrieval searches *and* which score it gates on.
+These cannot be chosen independently, because Azure AI Search's scores are not comparable.
+Measured against the live 1,014-control index over six on-topic and four off-topic questions:
+
+| Score | on-topic | off-topic | usable as a relevance floor? |
+|---|---|---|---|
+| `@search.rerankerScore` (semantic) | 2.00 – 3.26 | 0.54 – 1.44 | yes, cleanly |
+| `@search.score`, vector-only (rescaled cosine) | 0.635 – 0.776 | 0.517 – 0.576 | yes, narrowly |
+| `@search.score`, hybrid (RRF) | 0.028 – 0.032 | 0.024 – 0.032 | **no** |
+
+A hybrid query's `@search.score` is a **Reciprocal Rank Fusion** score, computed from each
+document's *rank* in the vector and BM25 lists rather than from how well it matches. Some
+document always ranks first, so "What is the capital of France?" scored 0.0323 — matching
+the best on-topic question. **No threshold on an RRF score can drive the safe fallback.**
+
+So the agent always gates on the score it ranked by:
+
+- **Ranker on** (Basic tier or above) — hybrid vector + BM25 search with semantic reranking;
+  gate on `@search.rerankerScore` ≥ `MIN_RERANKER_SCORE`.
+- **Ranker off** (Free tier) — `search_text` is dropped, making it a vector-only search, which
+  turns `@search.score` into a cosine similarity; gate on `@search.score` ≥ `MIN_VECTOR_SCORE`.
+
+The Free tier therefore gives up BM25 keyword matching. Measured against this corpus that
+costs little, because each document's embedded text is prefixed with its control ID, so
+`AC-2` still retrieves `ac-2` at rank one.
+
+## Sample output
+
+[samples/](samples/) holds one run of three questions — two on-topic, one deliberately not:
+
+- `smoke_test.json` — the raw `PipelineResult` for each: plan, per-step hits with scores,
+  the deduplicated grounding set, and the answer with its citations.
+- `smoke_test.log` — the JSON audit trail those three queries produced, one object per line.
+
+"What is the capital of France?" retrieves nothing above the floor and returns the safe
+fallback without ever reaching a chat model.
+
 ## Setup
 
 Requires Python 3.14 (the devcontainer in [.devcontainer/](.devcontainer/) provides it).
@@ -84,15 +164,22 @@ variable; [config.py](llm_policy_library/config.py) validates them. A missing or
 variable aborts startup with a message naming each variable to fix, rather than failing
 later inside an Azure SDK call.
 
-Two settings carry design weight:
+Three settings carry design weight:
 
 - `AZURE_SEARCH_SEMANTIC_RANKER` — semantic reranking needs Basic tier or above. Set it to
-  `false` on the Free tier; retrieval will then use hybrid vector + BM25 search only.
+  `false` on the Free tier, which switches retrieval to a vector-only search. It also
+  selects which relevance floor applies; see the two score scales above.
+- `MIN_RERANKER_SCORE` (default `1.8`, scale 0–4) and `MIN_VECTOR_SCORE` (default `0.60`,
+  a rescaled cosine) — the relevance floors. **Exactly one applies**, chosen by the flag
+  above. Each default sits between the measured on-topic and off-topic score bands, nearer
+  the on-topic band, because a compliance system should rather refuse than answer from a
+  control it half-matched. A floor of `0` can never trigger the fallback.
 - `LLM_REASONING_EFFORT` — every currently deployable Azure OpenAI chat model is a
   reasoning model that rejects `temperature`, `top_p`, and `seed`. Determinism is
   therefore enforced through grounding (structured outputs, a pinned model version,
   citation checks, and a safe fallback) rather than sampling controls. See decision D7 in
-  [TODO.md](TODO.md).
+  [TODO.md](TODO.md). Note that reasoning models are not bit-exact reproducible: the plan's
+  *shape* is guaranteed, its wording is not.
 
 ## Logging
 
@@ -113,9 +200,19 @@ with correlation_context() as correlation_id:
 The correlation ID lives in a `ContextVar`, so it survives `await` boundaries and stays
 isolated between concurrently served requests.
 
-The Azure SDK logs a full request/response header dump on every HTTP call, and `httpx` a
-line per request, both at INFO. They are pinned to WARNING so they cannot bury the audit
-trail; setting `LOG_LEVEL=DEBUG` restores them for troubleshooting.
+Every query writes one line per hop — plan, each retrieval step, the answer with its
+citations, and the end-to-end latency — all sharing the request's correlation ID.
+`samples/smoke_test.log` is a real example.
+
+Each retrieval step logs both sides of the relevance floor, `kept` and `dropped`, with
+scores. A safe fallback is only auditable if the trail says what was rejected and by how
+far: for "What is the capital of France?" the best rejected control scored `1.222` against
+the `1.8` floor.
+
+The Azure SDK logs a full request/response header dump on every HTTP call, `httpx` a line
+per request, and the Agent Framework a line per workflow superstep, all at INFO. They are
+pinned to WARNING so they cannot bury the audit trail; setting `LOG_LEVEL=DEBUG` restores
+them for troubleshooting.
 
 ## Tests and static analysis
 

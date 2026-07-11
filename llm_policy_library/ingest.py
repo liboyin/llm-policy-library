@@ -31,7 +31,11 @@ from azure.search.documents import SearchClient
 from azure.search.documents.indexes import SearchIndexClient
 from openai import AzureOpenAI
 
-from llm_policy_library.config import Settings, load_settings
+from llm_policy_library.config import (
+    AZURE_OPENAI_EMBEDDING_API_VERSION,
+    Settings,
+    load_settings,
+)
 from llm_policy_library.dataset import (
     CATALOG_URL,
     PolicyRecord,
@@ -48,9 +52,6 @@ from llm_policy_library.search_index import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Pinned: the embeddings request/response shape must not change under us.
-AZURE_OPENAI_API_VERSION: Final = "2024-10-21"
 
 # Azure OpenAI accepts up to 2,048 inputs per embeddings call, but caps the
 # request by total tokens too. Sixty-four control statements stay well inside
@@ -276,7 +277,7 @@ def main() -> int:
             AzureOpenAI(
                 azure_endpoint=settings.azure_openai_endpoint,
                 api_key=settings.azure_openai_api_key.get_secret_value(),
-                api_version=AZURE_OPENAI_API_VERSION,
+                api_version=AZURE_OPENAI_EMBEDDING_API_VERSION,
                 max_retries=MAX_RETRIES,
             ) as openai_client,
             SearchIndexClient(settings.azure_search_endpoint, credential) as index_client,

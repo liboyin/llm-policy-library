@@ -10,12 +10,23 @@ an opaque Azure SDK error on the first request.
 """
 
 from pathlib import Path
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_ENV_FILE = ".env"
+
+# The Azure OpenAI API versions this project talks. Pinned: a query vector is
+# only comparable to the document vectors already in the index if both came from
+# the same embeddings API contract, so ingestion and serving read one value.
+AZURE_OPENAI_EMBEDDING_API_VERSION: Final = "2024-10-21"
+
+# Not pinned: `preview` is Azure's rolling alias for the v1 Responses API, the
+# surface the Agent Framework chat client targets, and it has no dated
+# equivalent. What actually decides an answer — the model version — is pinned on
+# the deployment itself, not here (decision D7).
+AZURE_OPENAI_CHAT_API_VERSION: Final = "preview"
 
 # Mirrors the values accepted by the Azure OpenAI `reasoning_effort` parameter
 # (`openai.types.shared.ReasoningEffort`), minus its `None` member. `none` is
@@ -45,10 +56,13 @@ class Settings(BaseSettings):
         azure_search_api_key: Admin key for the Azure AI Search service.
         azure_search_index_name: Index holding the policy records.
         azure_search_semantic_ranker: Whether to apply semantic reranking. The
-            ranker needs Basic tier or above; set false on the Free tier.
+            ranker needs Basic tier or above; set false on the Free tier. It
+            also selects which of the two relevance thresholds below applies.
         retrieval_top_k: Documents retrieved per plan step.
-        min_relevance_score: Retrieved documents scoring below this are dropped,
-            which is what triggers the safe fallback when nothing is relevant.
+        min_reranker_score: Relevance floor on `@search.rerankerScore`, used
+            when `azure_search_semantic_ranker` is true.
+        min_vector_score: Relevance floor on the vector search `@search.score`,
+            used when `azure_search_semantic_ranker` is false.
         llm_reasoning_effort: Reasoning effort for the chat model. Deployable
             Azure OpenAI chat models reject `temperature`/`top_p`/`seed`, so
             grounding and low reasoning effort stand in for sampling controls.
@@ -76,8 +90,24 @@ class Settings(BaseSettings):
     azure_search_index_name: str
     azure_search_semantic_ranker: bool = True
 
-    retrieval_top_k: int = Field(default=5, ge=1)
-    min_relevance_score: float = Field(default=0.02, ge=0.0)
+    # Capped at the candidate window retrieval fetches and the semantic ranker
+    # reranks (`agents.retrieval.VECTOR_CANDIDATE_COUNT`). Asking for more would
+    # silently return fewer, since rows outside that window carry no reranker
+    # score and are dropped as unscored.
+    retrieval_top_k: int = Field(default=5, ge=1, le=50)
+
+    # Two thresholds, because the ranker toggle changes which score retrieval
+    # ranks on, and the two live on different scales. `llm_policy_library.agents.
+    # retrieval` explains why neither may be replaced by a single number.
+    #
+    # Each default sits between the two score bands measured against the live
+    # index on 2026-07-10. Relevant questions scored 2.00-3.26 on the reranker
+    # and 0.635-0.776 on the vector scale; off-topic ones reached only 1.44 and
+    # 0.576. The floors are set nearer the relevant band because a compliance
+    # system should rather refuse than answer from a control it half-matched.
+    min_reranker_score: float = Field(default=1.8, ge=0.0, le=4.0)
+    min_vector_score: float = Field(default=0.60, ge=0.0, le=1.0)
+
     llm_reasoning_effort: ReasoningEffort = "minimal"
 
     log_level: LogLevel = "INFO"

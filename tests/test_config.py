@@ -51,7 +51,8 @@ def test_settings_defaults_encode_the_task_requirements(required_env: None) -> N
     settings = testee.load_settings(env_file=None)
 
     assert 3 <= settings.retrieval_top_k <= 5, "TASK.md requires the top 3-5 results"
-    assert settings.min_relevance_score > 0.0, "a zero floor can never trigger the fallback"
+    assert settings.min_reranker_score > 0.0, "a zero floor can never trigger the fallback"
+    assert settings.min_vector_score > 0.0, "a zero floor can never trigger the fallback"
     assert settings.azure_search_semantic_ranker is True
     assert settings.llm_reasoning_effort == "minimal"
     assert settings.log_level == "INFO"
@@ -90,10 +91,24 @@ def test_settings_rejects_a_non_positive_top_k(required_env: None) -> None:
             testee.load_settings(env_file=None)
 
 
-def test_settings_rejects_a_negative_relevance_floor(required_env: None) -> None:
+def test_settings_rejects_a_negative_reranker_floor(required_env: None) -> None:
     """A negative floor would admit every document and defeat the grounding guard."""
-    with patch.dict(os.environ, {"MIN_RELEVANCE_SCORE": "-0.5"}):
-        with pytest.raises(testee.ConfigError, match="MIN_RELEVANCE_SCORE"):
+    with patch.dict(os.environ, {"MIN_RERANKER_SCORE": "-0.5"}):
+        with pytest.raises(testee.ConfigError, match="MIN_RERANKER_SCORE"):
+            testee.load_settings(env_file=None)
+
+
+def test_settings_rejects_a_reranker_floor_above_the_reranker_scale(required_env: None) -> None:
+    """`@search.rerankerScore` tops out at 4, so a larger floor rejects every document."""
+    with patch.dict(os.environ, {"MIN_RERANKER_SCORE": "4.5"}):
+        with pytest.raises(testee.ConfigError, match="MIN_RERANKER_SCORE"):
+            testee.load_settings(env_file=None)
+
+
+def test_settings_rejects_a_vector_floor_on_the_reranker_scale(required_env: None) -> None:
+    """1.8 is a valid reranker floor but an impossible cosine one; confusing them must fail."""
+    with patch.dict(os.environ, {"MIN_VECTOR_SCORE": "1.8"}):
+        with pytest.raises(testee.ConfigError, match="MIN_VECTOR_SCORE"):
             testee.load_settings(env_file=None)
 
 

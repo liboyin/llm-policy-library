@@ -134,12 +134,15 @@ Resource → **Keys and Endpoint**:
 | **Basic** (recommended) | ~US$75/mo, billed hourly | ≥2 GB, 15 indexes | **Available** in Australia East | `AZURE_SEARCH_SEMANTIC_RANKER=true` |
 
 > Basic per-service storage was raised in a 2024 capacity update; the dialog shows the
-> current figure at provisioning time. Either way it far exceeds the ~1,190-record demo.
+> current figure at provisioning time. Either way it far exceeds the 1,014-record demo.
 
-> The code path degrades gracefully: on **Free**, set the flag to `false` and the
-> system uses hybrid (vector + BM25) search without semantic reranking. On **Basic**,
-> set it to `true` to layer semantic reranking on top. The ~1,190-record demo catalog
-> fits comfortably in the Free tier's 50 MB.
+> The code path degrades gracefully, but the flag changes the **search mode**, not just
+> whether reranking is layered on. On **Basic**, set it to `true`: hybrid (vector + BM25)
+> search with semantic reranking, gated on `MIN_RERANKER_SCORE`. On **Free**, set it to
+> `false`: a vector-only search (the flag drops the keyword half), gated on
+> `MIN_VECTOR_SCORE` — because a hybrid search's fused score cannot gate the safe fallback.
+> See the README's "two search modes, two score scales" section. The 1,014-record demo
+> catalog fits comfortably in the Free tier's 50 MB.
 
 6. **Review + create** → **Create**.
 
@@ -175,7 +178,8 @@ Then edit `.env` with the values collected above:
 | `AZURE_SEARCH_INDEX_NAME` | required; keep the `.env.example` value `nist-800-53-controls` |
 | `AZURE_SEARCH_SEMANTIC_RANKER` | `true` on Basic, `false` on Free |
 | `RETRIEVAL_TOP_K` | keep default `5` |
-| `MIN_RELEVANCE_SCORE` | keep default `0.02` |
+| `MIN_RERANKER_SCORE` | keep default `1.8`; applies only when the ranker is `true` |
+| `MIN_VECTOR_SCORE` | keep default `0.60`; applies only when the ranker is `false` |
 | `LLM_REASONING_EFFORT` | keep default `minimal` (use `none` if you deployed `gpt-5.1`) |
 | `LOG_LEVEL` | keep default `INFO` |
 

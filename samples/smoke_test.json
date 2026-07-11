@@ -1,0 +1,391 @@
+[
+  {
+    "plan": {
+      "original_query": "What controls apply to API security?",
+      "steps": [
+        {
+          "search_query": "API security, protection of web APIs and application programming interfaces",
+          "purpose": "Find controls that require securing, authenticating, authorizing, monitoring, and protecting APIs and web services (e.g., access control, authentication, input validation, logging, encryption, rate limiting)."
+        }
+      ]
+    },
+    "results": [
+      {
+        "step": {
+          "search_query": "API security, protection of web APIs and application programming interfaces",
+          "purpose": "Find controls that require securing, authenticating, authorizing, monitoring, and protecting APIs and web services (e.g., access control, authentication, input validation, logging, encryption, rate limiting)."
+        },
+        "documents": [
+          {
+            "id": "ac-4.22",
+            "title": "Access Only",
+            "description": "Provide access from a single device to computing platforms, applications, or data residing in multiple different security domains, while preventing information flow between the different security domains.",
+            "category": "Access Control",
+            "score": 2.139594316482544
+          },
+          {
+            "id": "sa-17",
+            "title": "Developer Security and Privacy Architecture and Design",
+            "description": "Require the developer of the system, system component, or system service to produce a design specification and security and privacy architecture that:\n  a. Is consistent with the organization\u2019s security and privacy architecture that is an integral part the organization\u2019s enterprise architecture;\n  b. Accurately and completely describes the required security and privacy functionality, and the allocation of controls among physical and logical components; and\n  c. Expresses how individual security and privacy functions, mechanisms, and services work together to provide required security and privacy capabilities and a unified approach to protection.",
+            "category": "System and Services Acquisition",
+            "score": 2.101201057434082
+          },
+          {
+            "id": "sa-11.9",
+            "title": "Interactive Application Security Testing",
+            "description": "Require the developer of the system, system component, or system service to employ interactive application security testing tools to identify flaws and document the results.",
+            "category": "System and Services Acquisition",
+            "score": 2.075058937072754
+          },
+          {
+            "id": "ia-9",
+            "title": "Service Identification and Authentication",
+            "description": "Uniquely identify and authenticate [Assignment: system services and applications] before establishing communications with devices, users, or other services or applications.",
+            "category": "Identification and Authentication",
+            "score": 2.0011520385742188
+          },
+          {
+            "id": "ac-3.12",
+            "title": "Assert and Enforce Application Access",
+            "description": "(a) Require applications to assert, as part of the installation process, the access needed to the following system applications and functions: [Assignment: system applications and functions];\n(b) Provide an enforcement mechanism to prevent unauthorized access; and\n(c) Approve access changes after initial installation of the application.",
+            "category": "Access Control",
+            "score": 1.998759388923645
+          }
+        ]
+      }
+    ],
+    "documents": [
+      {
+        "id": "ac-4.22",
+        "title": "Access Only",
+        "description": "Provide access from a single device to computing platforms, applications, or data residing in multiple different security domains, while preventing information flow between the different security domains.",
+        "category": "Access Control",
+        "score": 2.139594316482544
+      },
+      {
+        "id": "sa-17",
+        "title": "Developer Security and Privacy Architecture and Design",
+        "description": "Require the developer of the system, system component, or system service to produce a design specification and security and privacy architecture that:\n  a. Is consistent with the organization\u2019s security and privacy architecture that is an integral part the organization\u2019s enterprise architecture;\n  b. Accurately and completely describes the required security and privacy functionality, and the allocation of controls among physical and logical components; and\n  c. Expresses how individual security and privacy functions, mechanisms, and services work together to provide required security and privacy capabilities and a unified approach to protection.",
+        "category": "System and Services Acquisition",
+        "score": 2.101201057434082
+      },
+      {
+        "id": "sa-11.9",
+        "title": "Interactive Application Security Testing",
+        "description": "Require the developer of the system, system component, or system service to employ interactive application security testing tools to identify flaws and document the results.",
+        "category": "System and Services Acquisition",
+        "score": 2.075058937072754
+      },
+      {
+        "id": "ia-9",
+        "title": "Service Identification and Authentication",
+        "description": "Uniquely identify and authenticate [Assignment: system services and applications] before establishing communications with devices, users, or other services or applications.",
+        "category": "Identification and Authentication",
+        "score": 2.0011520385742188
+      },
+      {
+        "id": "ac-3.12",
+        "title": "Assert and Enforce Application Access",
+        "description": "(a) Require applications to assert, as part of the installation process, the access needed to the following system applications and functions: [Assignment: system applications and functions];\n(b) Provide an enforcement mechanism to prevent unauthorized access; and\n(c) Approve access changes after initial installation of the application.",
+        "category": "Access Control",
+        "score": 1.998759388923645
+      }
+    ],
+    "response": {
+      "answer": "Applicable controls from the supplied set for API security are:\n\n- Require developer-produced security and privacy architecture and design that specifies required security functionality and how controls are allocated and integrated across components, so APIs are designed with explicit security behavior and unified protections [sa-17].\n\n- Require interactive application security testing by the developer to identify and document application-level flaws, which applies to API implementations and helps find API-specific vulnerabilities (eg. injection, auth flaws) during development [sa-11.9].\n\n- Uniquely identify and authenticate system services and applications before establishing communications, which applies directly to APIs and requires that services and applications calling or serving APIs be identified and authenticated prior to interacting [ia-9].\n\n- Require applications to assert the access they need at installation, provide enforcement mechanisms to prevent unauthorized access, and approve access changes after installation. For APIs this means enforcing declared access rights and preventing unauthorized API access or privilege escalation [ac-3.12].\n\n- Use single-device access to allow connections from one device to platforms/applications/data in different security domains while preventing information flow between domains. This can be applied to API gateway or proxy configurations that mediate cross-domain API access and enforce domain separation [ac-4.22].\n\nIf you need mapping of specific API controls (e.g., rate limiting, input validation, OAuth scopes) to these items, the supplied controls do not explicitly cover those specifics; they cover design/testing, service authentication, application access assertion/enforcement, and single-device cross-domain access [sa-17][sa-11.9][ia-9][ac-3.12][ac-4.22].",
+      "citations": [
+        "sa-17",
+        "sa-11.9",
+        "ia-9",
+        "ac-3.12",
+        "ac-4.22"
+      ],
+      "is_fallback": false
+    }
+  },
+  {
+    "plan": {
+      "original_query": "What policies relate to logging and monitoring?",
+      "steps": [
+        {
+          "search_query": "Audit logging, event logging, and audit record generation and retention",
+          "purpose": "Find controls that require generating, protecting, reviewing, and retaining audit logs and events."
+        },
+        {
+          "search_query": "Continuous monitoring, security monitoring, and detection of unauthorized activity",
+          "purpose": "Identify controls that require ongoing system and security monitoring, intrusion detection, and alerting."
+        },
+        {
+          "search_query": "Log analysis, log management, and audit review for investigations and incident response",
+          "purpose": "Locate controls that mandate log analysis, centralized log management, and using logs for incident response and investigations."
+        }
+      ]
+    },
+    "results": [
+      {
+        "step": {
+          "search_query": "Audit logging, event logging, and audit record generation and retention",
+          "purpose": "Find controls that require generating, protecting, reviewing, and retaining audit logs and events."
+        },
+        "documents": [
+          {
+            "id": "au-12",
+            "title": "Audit Record Generation",
+            "description": "a. Provide audit record generation capability for the event types the system is capable of auditing as defined in [AU-2a](#au-2_smt.a) on [Assignment: system components];\nb. Allow [Assignment: personnel or roles] to select the event types that are to be logged by specific components of the system; and\nc. Generate audit records for the event types defined in [AU-2c](#au-2_smt.c) that include the audit record content defined in [AU-3](#au-3).",
+            "category": "Audit and Accountability",
+            "score": 2.6862523555755615
+          },
+          {
+            "id": "au-11",
+            "title": "Audit Record Retention",
+            "description": "Retain audit records for [Assignment: time period] to provide support for after-the-fact investigations of incidents and to meet regulatory and organizational information retention requirements.",
+            "category": "Audit and Accountability",
+            "score": 2.587709903717041
+          },
+          {
+            "id": "au-2",
+            "title": "Event Logging",
+            "description": "a. Identify the types of events that the system is capable of logging in support of the audit function: [Assignment: event types];\nb. Coordinate the event logging function with other organizational entities requiring audit-related information to guide and inform the selection criteria for events to be logged;\nc. Specify the following event types for logging within the system: [Assignment: organization-defined event types (subset of the event types defined in [AU-2a.](#au-2_smt.a)) along with the frequency of (or situation requiring) logging for each identified event type];\nd. Provide a rationale for why the event types selected for logging are deemed to be adequate to support after-the-fact investigations of incidents; and\ne. Review and update the event types selected for logging [Assignment: frequency].",
+            "category": "Audit and Accountability",
+            "score": 2.5363118648529053
+          },
+          {
+            "id": "au-7",
+            "title": "Audit Record Reduction and Report Generation",
+            "description": "Provide and implement an audit record reduction and report generation capability that:\n  a. Supports on-demand audit record review, analysis, and reporting requirements and after-the-fact investigations of incidents; and\n  b. Does not alter the original content or time ordering of audit records.",
+            "category": "Audit and Accountability",
+            "score": 2.4024996757507324
+          },
+          {
+            "id": "si-7.8",
+            "title": "Auditing Capability for Significant Events",
+            "description": "Upon detection of a potential integrity violation, provide the capability to audit the event and initiate the following actions: [Selection (one or more): generate an audit record; alert current user; alert [Assignment: personnel or roles] ; [Assignment: other actions] ].",
+            "category": "System and Information Integrity",
+            "score": 2.3713064193725586
+          }
+        ]
+      },
+      {
+        "step": {
+          "search_query": "Continuous monitoring, security monitoring, and detection of unauthorized activity",
+          "purpose": "Identify controls that require ongoing system and security monitoring, intrusion detection, and alerting."
+        },
+        "documents": [
+          {
+            "id": "sc-5.3",
+            "title": "Detection and Monitoring",
+            "description": "(a) Employ the following monitoring tools to detect indicators of denial-of-service attacks against, or launched from, the system: [Assignment: monitoring tools] ; and\n(b) Monitor the following system resources to determine if sufficient resources exist to prevent effective denial-of-service attacks: [Assignment: system resources].",
+            "category": "System and Communications Protection",
+            "score": 2.367938995361328
+          },
+          {
+            "id": "ca-5",
+            "title": "Plan of Action and Milestones",
+            "description": "a. Develop a plan of action and milestones for the system to document the planned remediation actions of the organization to correct weaknesses or deficiencies noted during the assessment of the controls and to reduce or eliminate known vulnerabilities in the system; and\nb. Update existing plan of action and milestones [Assignment: frequency] based on the findings from control assessments, independent audits or reviews, and continuous monitoring activities.",
+            "category": "Assessment, Authorization, and Monitoring",
+            "score": 2.329124689102173
+          },
+          {
+            "id": "pm-14",
+            "title": "Testing, Training, and Monitoring",
+            "description": "a. Implement a process for ensuring that organizational plans for conducting security and privacy testing, training, and monitoring activities associated with organizational systems:\n  1. Are developed and maintained; and\n  2. Continue to be executed; and\nb. Review testing, training, and monitoring plans for consistency with the organizational risk management strategy and organization-wide priorities for risk response actions.",
+            "category": "Program Management",
+            "score": 2.3111352920532227
+          },
+          {
+            "id": "si-4",
+            "title": "System Monitoring",
+            "description": "a. Monitor the system to detect:\n  1. Attacks and indicators of potential attacks in accordance with the following monitoring objectives: [Assignment: monitoring objectives] ; and\n  2. Unauthorized local, network, and remote connections;\nb. Identify unauthorized use of the system through the following techniques and methods: [Assignment: techniques and methods];\nc. Invoke internal monitoring capabilities or deploy monitoring devices:\n  1. Strategically within the system to collect organization-determined essential information; and\n  2. At ad hoc locations within the system to track specific types of transactions of interest to the organization;\nd. Analyze detected events and anomalies;\ne. Adjust the level of system monitoring activity when there is a change in risk to organizational operations and assets, individuals, other organizations, or the Nation;\nf. Obtain legal opinion regarding system monitoring activities; and\ng. Provide [Assignment: system monitoring information] to [Assignment: personnel or roles] [Selection (one or more): as needed; [Assignment: frequency] ].",
+            "category": "System and Information Integrity",
+            "score": 2.3024508953094482
+          },
+          {
+            "id": "pm-31",
+            "title": "Continuous Monitoring Strategy",
+            "description": "Develop an organization-wide continuous monitoring strategy and implement continuous monitoring programs that include:\n  a. Establishing the following organization-wide metrics to be monitored: [Assignment: metrics];\n  b. Establishing [Assignment: monitoring frequencies] and [Assignment: assessment frequencies] for control effectiveness;\n  c. Ongoing monitoring of organizationally-defined metrics in accordance with the continuous monitoring strategy;\n  d. Correlation and analysis of information generated by control assessments and monitoring;\n  e. Response actions to address results of the analysis of control assessment and monitoring information; and\n  f. Reporting the security and privacy status of organizational systems to [Assignment: organization-defined personnel or roles] [Assignment: organization-defined frequency].",
+            "category": "Program Management",
+            "score": 2.2861452102661133
+          }
+        ]
+      },
+      {
+        "step": {
+          "search_query": "Log analysis, log management, and audit review for investigations and incident response",
+          "purpose": "Locate controls that mandate log analysis, centralized log management, and using logs for incident response and investigations."
+        },
+        "documents": [
+          {
+            "id": "pe-6",
+            "title": "Monitoring Physical Access",
+            "description": "a. Monitor physical access to the facility where the system resides to detect and respond to physical security incidents;\nb. Review physical access logs [Assignment: frequency] and upon occurrence of [Assignment: events] ; and\nc. Coordinate results of reviews and investigations with the organizational incident response capability.",
+            "category": "Physical and Environmental Protection",
+            "score": 2.4817235469818115
+          },
+          {
+            "id": "au-2",
+            "title": "Event Logging",
+            "description": "a. Identify the types of events that the system is capable of logging in support of the audit function: [Assignment: event types];\nb. Coordinate the event logging function with other organizational entities requiring audit-related information to guide and inform the selection criteria for events to be logged;\nc. Specify the following event types for logging within the system: [Assignment: organization-defined event types (subset of the event types defined in [AU-2a.](#au-2_smt.a)) along with the frequency of (or situation requiring) logging for each identified event type];\nd. Provide a rationale for why the event types selected for logging are deemed to be adequate to support after-the-fact investigations of incidents; and\ne. Review and update the event types selected for logging [Assignment: frequency].",
+            "category": "Audit and Accountability",
+            "score": 2.4771153926849365
+          },
+          {
+            "id": "ra-5.8",
+            "title": "Review Historic Audit Logs",
+            "description": "Review historic audit logs to determine if a vulnerability identified in a [Assignment: system] has been previously exploited within an [Assignment: time period].",
+            "category": "Risk Assessment",
+            "score": 2.3274409770965576
+          },
+          {
+            "id": "au-6.4",
+            "title": "Central Review and Analysis",
+            "description": "Provide and implement the capability to centrally review and analyze audit records from multiple components within the system.",
+            "category": "Audit and Accountability",
+            "score": 2.3098061084747314
+          },
+          {
+            "id": "ma-4.1",
+            "title": "Logging and Review",
+            "description": "(a) Log [Assignment: organization-defined audit events] for nonlocal maintenance and diagnostic sessions; and\n(b) Review the audit records of the maintenance and diagnostic sessions to detect anomalous behavior.",
+            "category": "Maintenance",
+            "score": 2.306438684463501
+          }
+        ]
+      }
+    ],
+    "documents": [
+      {
+        "id": "au-12",
+        "title": "Audit Record Generation",
+        "description": "a. Provide audit record generation capability for the event types the system is capable of auditing as defined in [AU-2a](#au-2_smt.a) on [Assignment: system components];\nb. Allow [Assignment: personnel or roles] to select the event types that are to be logged by specific components of the system; and\nc. Generate audit records for the event types defined in [AU-2c](#au-2_smt.c) that include the audit record content defined in [AU-3](#au-3).",
+        "category": "Audit and Accountability",
+        "score": 2.6862523555755615
+      },
+      {
+        "id": "au-11",
+        "title": "Audit Record Retention",
+        "description": "Retain audit records for [Assignment: time period] to provide support for after-the-fact investigations of incidents and to meet regulatory and organizational information retention requirements.",
+        "category": "Audit and Accountability",
+        "score": 2.587709903717041
+      },
+      {
+        "id": "au-2",
+        "title": "Event Logging",
+        "description": "a. Identify the types of events that the system is capable of logging in support of the audit function: [Assignment: event types];\nb. Coordinate the event logging function with other organizational entities requiring audit-related information to guide and inform the selection criteria for events to be logged;\nc. Specify the following event types for logging within the system: [Assignment: organization-defined event types (subset of the event types defined in [AU-2a.](#au-2_smt.a)) along with the frequency of (or situation requiring) logging for each identified event type];\nd. Provide a rationale for why the event types selected for logging are deemed to be adequate to support after-the-fact investigations of incidents; and\ne. Review and update the event types selected for logging [Assignment: frequency].",
+        "category": "Audit and Accountability",
+        "score": 2.5363118648529053
+      },
+      {
+        "id": "pe-6",
+        "title": "Monitoring Physical Access",
+        "description": "a. Monitor physical access to the facility where the system resides to detect and respond to physical security incidents;\nb. Review physical access logs [Assignment: frequency] and upon occurrence of [Assignment: events] ; and\nc. Coordinate results of reviews and investigations with the organizational incident response capability.",
+        "category": "Physical and Environmental Protection",
+        "score": 2.4817235469818115
+      },
+      {
+        "id": "au-7",
+        "title": "Audit Record Reduction and Report Generation",
+        "description": "Provide and implement an audit record reduction and report generation capability that:\n  a. Supports on-demand audit record review, analysis, and reporting requirements and after-the-fact investigations of incidents; and\n  b. Does not alter the original content or time ordering of audit records.",
+        "category": "Audit and Accountability",
+        "score": 2.4024996757507324
+      },
+      {
+        "id": "si-7.8",
+        "title": "Auditing Capability for Significant Events",
+        "description": "Upon detection of a potential integrity violation, provide the capability to audit the event and initiate the following actions: [Selection (one or more): generate an audit record; alert current user; alert [Assignment: personnel or roles] ; [Assignment: other actions] ].",
+        "category": "System and Information Integrity",
+        "score": 2.3713064193725586
+      },
+      {
+        "id": "sc-5.3",
+        "title": "Detection and Monitoring",
+        "description": "(a) Employ the following monitoring tools to detect indicators of denial-of-service attacks against, or launched from, the system: [Assignment: monitoring tools] ; and\n(b) Monitor the following system resources to determine if sufficient resources exist to prevent effective denial-of-service attacks: [Assignment: system resources].",
+        "category": "System and Communications Protection",
+        "score": 2.367938995361328
+      },
+      {
+        "id": "ca-5",
+        "title": "Plan of Action and Milestones",
+        "description": "a. Develop a plan of action and milestones for the system to document the planned remediation actions of the organization to correct weaknesses or deficiencies noted during the assessment of the controls and to reduce or eliminate known vulnerabilities in the system; and\nb. Update existing plan of action and milestones [Assignment: frequency] based on the findings from control assessments, independent audits or reviews, and continuous monitoring activities.",
+        "category": "Assessment, Authorization, and Monitoring",
+        "score": 2.329124689102173
+      },
+      {
+        "id": "ra-5.8",
+        "title": "Review Historic Audit Logs",
+        "description": "Review historic audit logs to determine if a vulnerability identified in a [Assignment: system] has been previously exploited within an [Assignment: time period].",
+        "category": "Risk Assessment",
+        "score": 2.3274409770965576
+      },
+      {
+        "id": "pm-14",
+        "title": "Testing, Training, and Monitoring",
+        "description": "a. Implement a process for ensuring that organizational plans for conducting security and privacy testing, training, and monitoring activities associated with organizational systems:\n  1. Are developed and maintained; and\n  2. Continue to be executed; and\nb. Review testing, training, and monitoring plans for consistency with the organizational risk management strategy and organization-wide priorities for risk response actions.",
+        "category": "Program Management",
+        "score": 2.3111352920532227
+      },
+      {
+        "id": "au-6.4",
+        "title": "Central Review and Analysis",
+        "description": "Provide and implement the capability to centrally review and analyze audit records from multiple components within the system.",
+        "category": "Audit and Accountability",
+        "score": 2.3098061084747314
+      },
+      {
+        "id": "ma-4.1",
+        "title": "Logging and Review",
+        "description": "(a) Log [Assignment: organization-defined audit events] for nonlocal maintenance and diagnostic sessions; and\n(b) Review the audit records of the maintenance and diagnostic sessions to detect anomalous behavior.",
+        "category": "Maintenance",
+        "score": 2.306438684463501
+      },
+      {
+        "id": "si-4",
+        "title": "System Monitoring",
+        "description": "a. Monitor the system to detect:\n  1. Attacks and indicators of potential attacks in accordance with the following monitoring objectives: [Assignment: monitoring objectives] ; and\n  2. Unauthorized local, network, and remote connections;\nb. Identify unauthorized use of the system through the following techniques and methods: [Assignment: techniques and methods];\nc. Invoke internal monitoring capabilities or deploy monitoring devices:\n  1. Strategically within the system to collect organization-determined essential information; and\n  2. At ad hoc locations within the system to track specific types of transactions of interest to the organization;\nd. Analyze detected events and anomalies;\ne. Adjust the level of system monitoring activity when there is a change in risk to organizational operations and assets, individuals, other organizations, or the Nation;\nf. Obtain legal opinion regarding system monitoring activities; and\ng. Provide [Assignment: system monitoring information] to [Assignment: personnel or roles] [Selection (one or more): as needed; [Assignment: frequency] ].",
+        "category": "System and Information Integrity",
+        "score": 2.3024508953094482
+      },
+      {
+        "id": "pm-31",
+        "title": "Continuous Monitoring Strategy",
+        "description": "Develop an organization-wide continuous monitoring strategy and implement continuous monitoring programs that include:\n  a. Establishing the following organization-wide metrics to be monitored: [Assignment: metrics];\n  b. Establishing [Assignment: monitoring frequencies] and [Assignment: assessment frequencies] for control effectiveness;\n  c. Ongoing monitoring of organizationally-defined metrics in accordance with the continuous monitoring strategy;\n  d. Correlation and analysis of information generated by control assessments and monitoring;\n  e. Response actions to address results of the analysis of control assessment and monitoring information; and\n  f. Reporting the security and privacy status of organizational systems to [Assignment: organization-defined personnel or roles] [Assignment: organization-defined frequency].",
+        "category": "Program Management",
+        "score": 2.2861452102661133
+      }
+    ],
+    "response": {
+      "answer": "The supplied controls identify several policy/plan areas that relate to logging and monitoring. Briefly:\n\n- Event logging policy: Define what event types the system can log, which organization-defined event types will be logged, logging frequency/situations, rationale for adequacy for after\u2011the\u2011fact investigations, and periodic review/update of those event types [au-2 a\u2013e].\n\n- Audit record generation policy: Provide capability for generating audit records for the identified event types, let authorized personnel/roles select which event types components log, and ensure generated records include required content [au-12 a\u2013c].\n\n- Audit record retention policy: Specify retention period for audit records to support after\u2011the\u2011fact investigations and meet regulatory/organizational retention requirements [au-11].\n\n- Audit review/analysis and reporting policy: Provide audit record reduction and report generation capabilities that support on\u2011demand review, analysis, and reporting and that preserve original content/time ordering; and provide central review/analysis capability across system components [au-7; au-6.4].\n\n- Historic log review policy: Review historic audit logs to determine whether identified vulnerabilities have been previously exploited within a defined time period [ra-5.8].\n\n- Monitoring and detection policy: Define monitoring objectives, techniques/methods to detect attacks, indicators, unauthorized connections, when and how to deploy internal/ad hoc monitoring, analysis of detected events/anomalies, and when to adjust monitoring levels as risk changes; also provide monitoring information to designated personnel/roles [si-4 a\u2013g].\n\n- Auditing capability for significant events: On detection of potential integrity violations, specify actions such as generating audit records and alerting users or personnel/roles [si-7.8].\n\n- Denial\u2011of\u2011service monitoring policy: Specify monitoring tools to detect DoS indicators and which system resources to monitor to assess DoS susceptibility [sc-5.3 a\u2013b].\n\n- Physical access logging/monitoring policy: Monitor physical access to facilities, review physical access logs on a defined frequency or upon defined events, and coordinate with incident response [pe-6 a\u2013c].\n\n- Maintenance logging and review policy: Log organization\u2011defined audit events for nonlocal maintenance/diagnostic sessions and review those audit records to detect anomalous behavior [ma-4.1 a\u2013b].\n\n- Continuous monitoring strategy and reporting policy: Establish organization\u2011wide metrics to monitor, set monitoring/assessment frequencies, perform ongoing monitoring, correlate/analysis of assessment and monitoring information, define response actions, and report security/privacy status to designated personnel at defined frequency [pm-31 a\u2013f].\n\n- Testing/training/monitoring process: Ensure plans for conducting security/privacy testing, training, and monitoring are developed, maintained, executed, and reviewed for consistency with risk strategy and priorities [pm-14 a\u2013b].\n\nIf you want, I can map these policy areas into specific policy statements or a template for each (e.g., required content, responsible roles, review cadence) using only these controls.",
+      "citations": [
+        "au-11",
+        "ra-5.8",
+        "si-7.8"
+      ],
+      "is_fallback": false
+    }
+  },
+  {
+    "plan": {
+      "original_query": "What is the capital of France?",
+      "steps": [
+        {
+          "search_query": "capital city of France",
+          "purpose": "Find any control statements about managing or specifying national capitals or geographic administrative data \u2014 to see if the control catalog contains references to country capitals."
+        }
+      ]
+    },
+    "results": [
+      {
+        "step": {
+          "search_query": "capital city of France",
+          "purpose": "Find any control statements about managing or specifying national capitals or geographic administrative data \u2014 to see if the control catalog contains references to country capitals."
+        },
+        "documents": []
+      }
+    ],
+    "documents": [],
+    "response": {
+      "answer": "I could not find any NIST SP 800-53 control relevant to that question in the policy library, so I cannot answer it. Try rephrasing the question in terms of a security control, a control family, or a control ID such as AC-2.",
+      "citations": [],
+      "is_fallback": true
+    }
+  }
+]

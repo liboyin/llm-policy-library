@@ -4,6 +4,7 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -388,6 +389,28 @@ async def test_evaluate_query_skips_judges_when_an_on_topic_query_falls_back() -
     assert evaluation.retrieval is not None and evaluation.retrieval.recall == 0.0
     assert evaluation.retrieval.holes == 0, "the graded evaluator was skipped, not called on nothing"
     assert evaluation.passed is False
+
+
+async def test_evaluate_query_logs_none_quality_on_judge_failure(caplog: pytest.LogCaptureFixture) -> None:
+    """If an LLM judge fails persistently, the evaluation continues with a None quality score."""
+    query = "access control"
+    documents = [make_document("ac-2")]
+    result = make_result(query, documents, "Use [ac-2].", ["ac-2"])
+    pipeline = FakePipeline({query: result})
+    golden = testee.GoldenQuery(query=query, relevant={"ac-2": 2})
+
+    def failing_judge(*args: Any, **kwargs: Any) -> Mapping[str, Any]:
+        raise ValueError("Judge failed")
+
+    with patch("asyncio.sleep", AsyncMock()):
+        evaluation = await testee.evaluate_query(
+            pipeline, make_doc_eval(), failing_judge, make_relevance(), golden
+        )
+
+    assert evaluation.answer_quality is None
+    assert "LLM judge failed after retries" in caplog.text
+    assert evaluation.retrieval is not None
+    assert evaluation.citations is not None and evaluation.citations.invented == []
 
 
 async def test_evaluate_query_passes_an_out_of_domain_query_that_falls_back() -> None:

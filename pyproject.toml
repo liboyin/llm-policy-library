@@ -28,6 +28,7 @@ dependencies = [
   "pydantic>=2",
   "pydantic-settings>=2",
   "python-dotenv",
+  "tenacity",
   "uvicorn",
 ]
 

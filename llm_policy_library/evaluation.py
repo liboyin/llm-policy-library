@@ -31,14 +31,18 @@ runner that constructs the real evaluators and a live pipeline and calls in here
 """
 
 import json
+import logging
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
 
 from llm_policy_library.agents.response import extract_citations, format_documents
 from llm_policy_library.models import PipelineResult, PlanStep, RetrievedDocument
+
+logger = logging.getLogger(__name__)
 
 # DocumentRetrievalEvaluator's k is fixed at 3, so its metric keys are suffixed
 # `@3`. Named here so the extraction and the report agree on one source.
@@ -569,14 +573,29 @@ async def evaluate_query(
     answer_quality: AnswerQuality | None = None
     if not response.is_fallback and result.documents:
         context = format_documents(result.documents)
-        groundedness = groundedness_eval(
-            query=golden.query, response=response.answer, context=context
-        )
-        relevance = relevance_eval(query=golden.query, response=response.answer)
-        answer_quality = AnswerQuality(
-            groundedness=float(groundedness["groundedness"]),
-            relevance=float(relevance["relevance"]),
-        )
+        try:
+            async for attempt in AsyncRetrying(
+                stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True
+            ):
+                with attempt:
+                    groundedness = groundedness_eval(
+                        query=golden.query, response=response.answer, context=context
+                    )
+            async for attempt in AsyncRetrying(
+                stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True
+            ):
+                with attempt:
+                    relevance = relevance_eval(query=golden.query, response=response.answer)
+            answer_quality = AnswerQuality(
+                groundedness=float(groundedness["groundedness"]),
+                relevance=float(relevance["relevance"]),
+            )
+        except Exception as e:
+            logger.warning(
+                "LLM judge failed after retries",
+                extra={"query": golden.query, "error": str(e)},
+            )
+            answer_quality = None
 
     return QueryEvaluation(
         query=golden.query,

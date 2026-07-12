@@ -11,13 +11,6 @@ authors = [
   {name = "Libo Yin", email = "liboyin830@gmail.com"}
 ]
 dependencies = [
-  # PydanticAI replaced the Microsoft Agent Framework, whose pins conflicted
-  # with azure-search-documents. `-slim` with the one extra we use: the
-  # `pydantic-ai` meta-package pulls every provider (Anthropic, Groq, Mistral,
-  # ...) plus evals and MCP, none of which this project touches.
-  # Floor at 2: the code uses the post-1.0 surface (`OpenAIChatModel`,
-  # `output_type`, `openai_reasoning_effort`).
-  "pydantic-ai-slim[openai]>=2",
   # Major-capped: 12.x reworked the index/vector API this project builds against.
   "azure-search-documents>=12.0.0,<13",
   "fastapi",
@@ -25,6 +18,13 @@ dependencies = [
   "openai",
   "pydantic>=2",
   "pydantic-settings>=2",
+  # PydanticAI replaced the Microsoft Agent Framework, whose pins conflicted
+  # with azure-search-documents. `-slim` with the one extra we use: the
+  # `pydantic-ai` meta-package pulls every provider (Anthropic, Groq, Mistral,
+  # ...) plus evals and MCP, none of which this project touches.
+  # Floor at 2: the code uses the post-1.0 surface (`OpenAIChatModel`,
+  # `output_type`, `openai_reasoning_effort`).
+  "pydantic-ai-slim[openai]>=2",
   "python-dotenv",
   "tenacity",
   "uvicorn",
@@ -35,6 +35,7 @@ dev = [
   "ipython",
   "locust",
   "mypy",
+  "pip-tools",
   "pytest",
   "pytest-asyncio",
   "pytest-cov",

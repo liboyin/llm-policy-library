@@ -18,6 +18,7 @@
             "extensions": [
                 "anthropic.claude-code",
                 "charliermarsh.ruff",
+                "github.vscode-github-actions",
                 "mhutchie.git-graph",
                 "ms-python.debugpy",
                 "ms-python.python",

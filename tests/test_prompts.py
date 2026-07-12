@@ -1,9 +1,6 @@
 """Unit tests for `llm_policy_library.prompts`."""
 
-import json
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import patch
 
 import llm_policy_library.prompts as testee
 

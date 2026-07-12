@@ -1,9 +1,13 @@
 """Unit tests for `llm_policy_library.agents.response`."""
 
 import logging
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic_ai import UnexpectedModelBehavior
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.test import TestModel
 
 import llm_policy_library.agents.response as testee
 from llm_policy_library.models import RetrievedDocument
@@ -39,16 +43,17 @@ def agent_answering(answer: str) -> MagicMock:
         The stub agent.
     """
     agent = MagicMock()
-    agent.run = AsyncMock(return_value=MagicMock(text=answer))
+    agent.run = AsyncMock(return_value=MagicMock(output=answer))
     return agent
 
 
-def test_build_response_agent_sets_the_configured_effort_and_no_response_format() -> None:
+def test_build_response_agent_sets_the_configured_effort_and_prose_output() -> None:
     """An answer is prose; a JSON envelope would cost tokens and buy nothing."""
-    agent = testee.build_response_agent(MagicMock(), "minimal")
+    agent = testee.build_response_agent(cast(OpenAIChatModel, TestModel()), "minimal")
 
-    assert agent.default_options["reasoning"] == {"effort": "minimal"}
-    assert "response_format" not in agent.default_options
+    # See test_planner on why the exact settings key is load-bearing.
+    assert agent.model_settings == {"openai_reasoning_effort": "minimal"}
+    assert agent.output_type is str
 
 
 def test_response_instructions_forbid_uncited_and_invented_controls() -> None:
@@ -193,4 +198,13 @@ async def test_generate_response_raises_on_an_empty_answer() -> None:
     agent = agent_answering("   ")
 
     with pytest.raises(testee.ResponseError, match="empty answer"):
+        await testee.generate_response(agent, "q", [make_document("ac-2")])
+
+
+async def test_generate_response_wraps_a_model_misbehavior_as_a_response_error() -> None:
+    """A model that gives up answering is a Response failure, not an opaque library error."""
+    agent = MagicMock()
+    agent.run = AsyncMock(side_effect=UnexpectedModelBehavior("Exceeded maximum retries"))
+
+    with pytest.raises(testee.ResponseError, match="failed to produce"):
         await testee.generate_response(agent, "q", [make_document("ac-2")])

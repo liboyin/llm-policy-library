@@ -1,4 +1,4 @@
-"""The Microsoft Agent Framework workflow that wires the three agents together.
+"""The pipeline that wires the three agents together.
 
 The pipeline is a chain, and each link is a typed Pydantic message rather than a
 conversation:
@@ -9,33 +9,29 @@ conversation:
       -> Response  -> PipelineResult
 
 Because the edges are types, a stage cannot quietly reinterpret what the last
-one produced, and the workflow refuses to build if two stages disagree. This is
-also the whole audit trail: a `PipelineResult` carries the plan, every step's
-hits and scores, the grounding set, and the answer with its citations, so an
-auditor can replay how a compliance answer was reached without re-running it.
+one produced. This is also the whole audit trail: a `PipelineResult` carries the
+plan, every step's hits and scores, the grounding set, and the answer with its
+citations, so an auditor can replay how a compliance answer was reached without
+re-running it.
 
-A `Workflow` holds the state of one run and refuses a second concurrent one
-("Workflow is already running"), so `answer_query` builds a fresh one per query
-— 0.2 ms against a multi-second pipeline. The executors it wires are immutable
-holders of the agents and clients, and are safe to share across those runs.
-
-The executors build nothing. Client lifetimes belong to `open_pipeline`, which
-is the only place in the serving path that opens a socket and is entered once
-per process, not once per request; `build_pipeline` accepts already-open clients
-so the whole workflow can be exercised with mocks.
+The three stages are plain sequential awaits: a straight-line chain needs no
+workflow engine, and PydanticAI agents hold no per-run state, so one pipeline
+serves concurrent queries. Client lifetimes belong to `open_pipeline`, which is
+the only place in the serving path that opens a socket and is entered once per
+process, not once per request; `build_pipeline` accepts an already-built model
+and already-open clients so the whole pipeline can be exercised with mocks.
 """
 
 import logging
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, Never
 
-from agent_framework import Executor, Workflow, WorkflowBuilder, WorkflowContext, handler
-from agent_framework.openai import OpenAIChatClient
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents.aio import SearchClient
 from openai import AsyncAzureOpenAI
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.azure import AzureProvider
 
 from llm_policy_library.agents.planner import PlannerAgent, build_planner, plan_query
 from llm_policy_library.agents.response import ResponseAgent, build_response_agent, generate_response
@@ -45,67 +41,58 @@ from llm_policy_library.config import (
     AZURE_OPENAI_EMBEDDING_API_VERSION,
     Settings,
 )
-from llm_policy_library.models import PipelineResult, QueryPlan, RetrievalOutcome
+from llm_policy_library.models import PipelineResult, RetrievalOutcome
 
 logger = logging.getLogger(__name__)
 
 
-class OrchestrationError(RuntimeError):
-    """Raised when the workflow completes without producing a result."""
-
-
-class PlannerExecutor(Executor):
-    """Turns the user's question into a `QueryPlan`."""
-
-    def __init__(self, agent: PlannerAgent) -> None:
-        """Bind the executor to a Planner Agent.
-
-        Args:
-            agent: The Planner Agent.
-        """
-        super().__init__(id="planner")
-        self._agent = agent
-
-    @handler
-    async def run(self, query: str, ctx: WorkflowContext[QueryPlan]) -> None:
-        """Plan the searches for one question.
-
-        Args:
-            query: The user's question.
-            ctx: Workflow context carrying the plan onward.
-        """
-        await ctx.send_message(await plan_query(self._agent, query))
-
-
-class RetrievalExecutor(Executor):
-    """Executes a plan's searches and assembles the grounding set."""
+class PolicyPipeline:
+    """Answers policy questions by running the three agents in sequence."""
 
     def __init__(
         self,
+        planner: PlannerAgent,
+        response: ResponseAgent,
         search_client: SearchClient,
         openai_client: AsyncAzureOpenAI,
         settings: Settings,
     ) -> None:
-        """Bind the executor to the search and embedding clients.
+        """Hold the agents and clients every query runs against.
 
         Args:
+            planner: The Planner Agent.
+            response: The Response Agent.
             search_client: Client bound to the policy index.
             openai_client: Client for the embedding deployment.
             settings: Validated runtime configuration.
         """
-        super().__init__(id="retrieval")
+        self._planner = planner
+        self._response = response
         self._search_client = search_client
         self._openai_client = openai_client
         self._settings = settings
 
-    @handler
-    async def run(self, plan: QueryPlan, ctx: WorkflowContext[RetrievalOutcome]) -> None:
-        """Retrieve for every plan step and deduplicate the hits.
+    async def answer_query(self, query: str) -> PipelineResult:
+        """Run the full pipeline for one question.
+
+        The agents and clients hold no per-run state, so one pipeline serves
+        concurrent queries without interference.
 
         Args:
-            plan: The Planner's decomposition.
-            ctx: Workflow context carrying the outcome onward.
+            query: The user's question.
+
+        Returns:
+            The plan, the retrieved controls, and the grounded answer.
+
+        Raises:
+            PlannerError: If planning failed; see `plan_query`.
+            ResponseError: If the model returned no answer text; see
+                `generate_response`.
         """
+        started = time.perf_counter()
+
+        plan = await plan_query(self._planner, query)
+
         results = await retrieve_plan(
             self._search_client, self._openai_client, self._settings, plan
         )
@@ -120,110 +107,19 @@ class RetrievalExecutor(Executor):
                 "documents": [document.id for document in documents],
             },
         )
-        await ctx.send_message(
-            RetrievalOutcome(plan=plan, results=results, documents=documents)
-        )
+        outcome = RetrievalOutcome(plan=plan, results=results, documents=documents)
 
-
-class ResponseExecutor(Executor):
-    """Writes the grounded answer, or yields the safe fallback."""
-
-    def __init__(self, agent: ResponseAgent) -> None:
-        """Bind the executor to a Response Agent.
-
-        Args:
-            agent: The Response Agent.
-        """
-        super().__init__(id="response")
-        self._agent = agent
-
-    @handler
-    async def run(
-        self, outcome: RetrievalOutcome, ctx: WorkflowContext[Never, PipelineResult]
-    ) -> None:
-        """Answer the question from the grounding set.
-
-        Args:
-            outcome: Everything retrieval found.
-            ctx: Workflow context, which this stage yields the final result to.
-        """
         response = await generate_response(
-            self._agent, outcome.plan.original_query, outcome.documents
+            self._response, outcome.plan.original_query, outcome.documents
         )
-        await ctx.yield_output(
-            PipelineResult(
-                plan=outcome.plan,
-                results=outcome.results,
-                documents=outcome.documents,
-                response=response,
-            )
+        result = PipelineResult(
+            plan=outcome.plan,
+            results=outcome.results,
+            documents=outcome.documents,
+            response=response,
         )
 
-
-def build_workflow(
-    planner: PlannerExecutor, retrieval: RetrievalExecutor, response: ResponseExecutor
-) -> Workflow:
-    """Chain the three executors into a workflow.
-
-    Args:
-        planner: The Planner executor, which starts the chain.
-        retrieval: The Retrieval executor.
-        response: The Response executor, whose output is the workflow's.
-
-    Returns:
-        The built workflow.
-    """
-    return (
-        WorkflowBuilder(name="policy-library", start_executor=planner, output_from=[response])
-        .add_chain([planner, retrieval, response])
-        .build()
-    )
-
-
-class PolicyPipeline:
-    """Answers policy questions by running the workflow once per query."""
-
-    def __init__(
-        self, planner: PlannerExecutor, retrieval: RetrievalExecutor, response: ResponseExecutor
-    ) -> None:
-        """Hold the executors a per-query workflow is built from.
-
-        Args:
-            planner: The Planner executor.
-            retrieval: The Retrieval executor.
-            response: The Response executor.
-        """
-        self._planner = planner
-        self._retrieval = retrieval
-        self._response = response
-
-    async def answer_query(self, query: str) -> PipelineResult:
-        """Run the full pipeline for one question.
-
-        A `Workflow` carries the state of a single run and rejects a concurrent
-        second one, so one is built per query. The executors, and the agents and
-        clients they hold, are shared across concurrent queries.
-
-        Args:
-            query: The user's question.
-
-        Returns:
-            The plan, the retrieved controls, and the grounded answer.
-
-        Raises:
-            OrchestrationError: If the workflow yielded no `PipelineResult`,
-                which means an executor stopped early without raising.
-        """
-        workflow = build_workflow(self._planner, self._retrieval, self._response)
-        started = time.perf_counter()
-        run = await workflow.run(query)
         elapsed_ms = (time.perf_counter() - started) * 1000
-
-        outputs = [output for output in run.get_outputs() if isinstance(output, PipelineResult)]
-        if not outputs:
-            raise OrchestrationError(f"workflow produced no result for query {query!r}")
-        result = outputs[-1]
-
         # The one line that pairs the request's input with its full output, which
         # is the audit record TASK.md requires. The per-stage lines above carry
         # the plan and the retrieval scores; this carries the answer text itself.
@@ -243,19 +139,18 @@ class PolicyPipeline:
 
 def build_pipeline(
     settings: Settings,
-    chat_client: OpenAIChatClient[Any],
+    chat_model: OpenAIChatModel,
     openai_client: AsyncAzureOpenAI,
     search_client: SearchClient,
 ) -> PolicyPipeline:
-    """Assemble the agents, executors, and workflow over open Azure clients.
+    """Assemble the agents into a pipeline over open Azure clients.
 
-    Both chat agents share one client. Its type parameter names the *default*
-    options an agent is built with, and the two agents differ there — only the
-    Planner sets a `response_format` — so the client is deliberately unbound.
+    Both chat agents share one model instance; they differ only in instructions
+    and output type, which live on the agents themselves.
 
     Args:
         settings: Validated runtime configuration.
-        chat_client: Agent Framework client bound to the chat deployment.
+        chat_model: PydanticAI model bound to the chat deployment.
         openai_client: Client for the embedding deployment.
         search_client: Client bound to the policy index.
 
@@ -264,9 +159,11 @@ def build_pipeline(
     """
     effort = settings.llm_reasoning_effort
     return PolicyPipeline(
-        PlannerExecutor(build_planner(chat_client, effort)),
-        RetrievalExecutor(search_client, openai_client, settings),
-        ResponseExecutor(build_response_agent(chat_client, effort)),
+        planner=build_planner(chat_model, effort),
+        response=build_response_agent(chat_model, effort),
+        search_client=search_client,
+        openai_client=openai_client,
+        settings=settings,
     )
 
 
@@ -274,11 +171,10 @@ def build_pipeline(
 async def open_pipeline(settings: Settings) -> AsyncIterator[PolicyPipeline]:
     """Open the Azure clients, yield a pipeline, and close them afterwards.
 
-    Chat and embeddings get separate Azure OpenAI clients because they are pinned
-    to different API versions: the chat model is reached through the Responses
-    API, the embedding model through the stable version ingestion used. The
-    Agent Framework chat client owns its own transport and exposes no close, so
-    it is created per pipeline, not per request.
+    Chat and embeddings get separate Azure OpenAI clients because they are
+    pinned to different API versions. Both are context-managed here, so the
+    sockets they own are closed on exit; the PydanticAI model is a thin wrapper
+    over the chat client and owns no transport of its own.
 
     Args:
         settings: Validated runtime configuration.
@@ -286,13 +182,12 @@ async def open_pipeline(settings: Settings) -> AsyncIterator[PolicyPipeline]:
     Yields:
         A pipeline bound to freshly opened clients.
     """
-    chat_client: OpenAIChatClient[Any] = OpenAIChatClient(
-        model=settings.azure_openai_chat_deployment,
-        azure_endpoint=settings.azure_openai_endpoint,
-        api_key=settings.azure_openai_api_key.get_secret_value(),
-        api_version=AZURE_OPENAI_CHAT_API_VERSION,
-    )
     async with (
+        AsyncAzureOpenAI(
+            azure_endpoint=settings.azure_openai_endpoint,
+            api_key=settings.azure_openai_api_key.get_secret_value(),
+            api_version=AZURE_OPENAI_CHAT_API_VERSION,
+        ) as chat_client,
         AsyncAzureOpenAI(
             azure_endpoint=settings.azure_openai_endpoint,
             api_key=settings.azure_openai_api_key.get_secret_value(),
@@ -304,4 +199,8 @@ async def open_pipeline(settings: Settings) -> AsyncIterator[PolicyPipeline]:
             AzureKeyCredential(settings.azure_search_api_key.get_secret_value()),
         ) as search_client,
     ):
-        yield build_pipeline(settings, chat_client, openai_client, search_client)
+        chat_model = OpenAIChatModel(
+            settings.azure_openai_chat_deployment,
+            provider=AzureProvider(openai_client=chat_client),
+        )
+        yield build_pipeline(settings, chat_model, openai_client, search_client)

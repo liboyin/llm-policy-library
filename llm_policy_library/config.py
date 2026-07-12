@@ -27,11 +27,12 @@ DEFAULT_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 # the same embeddings API contract, so ingestion and serving read one value.
 AZURE_OPENAI_EMBEDDING_API_VERSION: Final = "2024-10-21"
 
-# Not pinned: `preview` is Azure's rolling alias for the v1 Responses API, the
-# surface the Agent Framework chat client targets, and it has no dated
-# equivalent. What actually decides an answer — the model version — is pinned on
-# the deployment itself, not here (decision D7).
-AZURE_OPENAI_CHAT_API_VERSION: Final = "preview"
+# Dated: PydanticAI drives the chat model through the official OpenAI SDK's
+# deployments-based Azure endpoint, which accepts only dated API versions. The
+# rolling `preview` alias belongs to the v1 surface the Agent Framework client
+# used to target. What actually decides an answer — the model version — is
+# pinned on the deployment itself, not here (decision D7).
+AZURE_OPENAI_CHAT_API_VERSION: Final = "2024-12-01-preview"
 
 # Mirrors the values accepted by the Azure OpenAI `reasoning_effort` parameter
 # (`openai.types.shared.ReasoningEffort`), minus its `None` member. `none` is

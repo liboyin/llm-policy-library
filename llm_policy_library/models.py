@@ -2,8 +2,8 @@
 
 These models are the contracts of the pipeline: the Planner emits a `QueryPlan`,
 the Retrieval Agent turns it into a `RetrievalOutcome`, and the Response Agent
-answers with a `GroundedResponse`, which the orchestrator's final executor packs
-into a `PipelineResult`. Every hop is a validated Pydantic model rather than
+answers with a `GroundedResponse`, which the orchestrator packs into a
+`PipelineResult`. Every hop is a validated Pydantic model rather than
 free text, which is what makes the orchestration inspectable — the audit log and
 the evaluation harness both read these objects, not prose.
 

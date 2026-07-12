@@ -11,14 +11,13 @@ authors = [
   {name = "Libo Yin", email = "liboyin830@gmail.com"}
 ]
 dependencies = [
-  # Microsoft Agent Framework: `-core` plus the one connector we use. The
-  # `agent-framework` meta-package pulls ~40 optional integrations (Bedrock,
-  # Ollama, Redis, ...) we never use. As of 1.10 the chat clients live outside
-  # `-core`; `agent-framework-openai` hosts the Azure OpenAI client too, which
-  # `OpenAIChatClient(azure_endpoint=...)` selects. There is no separate
-  # `agent-framework-azure-openai` package.
-  "agent-framework-core",
-  "agent-framework-openai",
+  # PydanticAI replaced the Microsoft Agent Framework, whose pins conflicted
+  # with azure-search-documents. `-slim` with the one extra we use: the
+  # `pydantic-ai` meta-package pulls every provider (Anthropic, Groq, Mistral,
+  # ...) plus evals and MCP, none of which this project touches.
+  # Floor at 2: the code uses the post-1.0 surface (`OpenAIChatModel`,
+  # `output_type`, `openai_reasoning_effort`).
+  "pydantic-ai-slim[openai]>=2",
   "azure-ai-evaluation",
   # Major-capped: 12.x reworked the index/vector API this project builds against.
   "azure-search-documents>=12.0.0,<13",
@@ -66,7 +65,7 @@ warn_unused_ignores = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=llm_policy_library --cov-report=term-missing --cov-fail-under=80"
-# The agents and the workflow are async throughout; `auto` runs their tests
+# The agents and the pipeline are async throughout; `auto` runs their tests
 # without a marker on every one of them.
 asyncio_mode = "auto"
 

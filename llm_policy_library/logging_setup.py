@@ -39,15 +39,16 @@ _RESERVED_PAYLOAD_KEYS: Final[frozenset[str]] = frozenset(
 )
 
 # Libraries that log a line — or, for the Azure SDK, a full request and response
-# header dump — on every HTTP call they make, and, for the Agent Framework, on
-# every workflow superstep. At INFO they emit an order of magnitude more lines
-# than the application does, burying the request audit trail this module exists
-# to produce. Their warnings and errors still surface.
+# header dump — on every HTTP call they make. At INFO they emit an order of
+# magnitude more lines than the application does, burying the request audit
+# trail this module exists to produce. Their warnings and errors still surface.
 #
 # `openai` is deliberately absent: its per-request chatter is DEBUG (and its
 # HTTP traffic surfaces through `httpx` anyway), while "Retrying request to ..."
 # is INFO. Silencing it would hide a run that only succeeded after retrying.
-_NOISY_LIBRARY_LOGGERS: Final[tuple[str, ...]] = ("agent_framework", "azure", "httpx")
+# `pydantic_ai` is absent too: it reports through OpenTelemetry when asked,
+# not through per-call stdlib log lines.
+_NOISY_LIBRARY_LOGGERS: Final[tuple[str, ...]] = ("azure", "httpx")
 
 
 def get_correlation_id() -> str:

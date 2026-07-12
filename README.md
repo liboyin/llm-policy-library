@@ -2,13 +2,13 @@
 
 A multi-agent AI system that answers questions about enterprise security policies by
 retrieving from the NIST SP 800-53 Rev 5 control catalog indexed in Azure AI Search,
-planning a query with Microsoft Agent Framework agents, and generating a grounded,
+planning a query with PydanticAI agents, and generating a grounded,
 citation-bearing answer with Azure OpenAI.
 
 See [TASK.md](TASK.md) for the goals this project implements and
 [TODO.md](TODO.md) for the phased execution plan and the resolved design decisions.
 
-> **Status:** evaluated (Phase 5). Ingestion, the three agents, the orchestration workflow, the
+> **Status:** evaluated (Phase 5). Ingestion, the three agents, the orchestration pipeline, the
 > HTTP API, the CLI, and the evaluation harness are in place; the load test and the architecture
 > doc land in later phases.
 
@@ -25,7 +25,7 @@ See [TASK.md](TASK.md) for the goals this project implements and
 | [llm_policy_library/agents/planner.py](llm_policy_library/agents/planner.py) | Planner Agent — decomposes a question into 1–3 searches |
 | [llm_policy_library/agents/retrieval.py](llm_policy_library/agents/retrieval.py) | Retrieval Agent — searches the index and applies the relevance floor |
 | [llm_policy_library/agents/response.py](llm_policy_library/agents/response.py) | Response Agent — writes the grounded answer, or the safe fallback |
-| [llm_policy_library/orchestrator.py](llm_policy_library/orchestrator.py) | The Agent Framework workflow wiring the three together |
+| [llm_policy_library/orchestrator.py](llm_policy_library/orchestrator.py) | The pipeline wiring the three agents together |
 | [llm_policy_library/api.py](llm_policy_library/api.py) | FastAPI service — `POST /query`, `GET /healthz` |
 | [llm_policy_library/cli.py](llm_policy_library/cli.py) | `python -m llm_policy_library.cli "question"` — same pipeline, pretty-printed |
 | [llm_policy_library/evaluation.py](llm_policy_library/evaluation.py) | Evaluation harness: golden-set metrics, citation check, Markdown report |
@@ -76,7 +76,7 @@ answers cite and the golden set labels.
 
 ## The multi-agent pipeline
 
-Three agents run as a Microsoft Agent Framework `Workflow`. Each edge is a validated
+Three agents run as a sequential pipeline over PydanticAI. Each edge is a validated
 Pydantic model, not a conversation, so a stage cannot quietly reinterpret what the previous
 one produced:
 
@@ -104,10 +104,10 @@ one produced:
   the safe fallback *without calling a chat model*, and any citation in the answer that was
   not retrieved is excluded from `citations` and logged as a grounding violation.
 
-An Agent Framework `Workflow` holds the state of one run and rejects a second concurrent
-one, so `answer_query` builds a fresh workflow per query (0.2 ms, against a multi-second
-pipeline). The executors — and the agents and Azure clients they hold — are shared. The
-clients themselves are opened once per process by `open_pipeline`, never per request.
+The three stages are plain sequential awaits — a straight-line chain needs no workflow
+engine — and PydanticAI agents hold no per-run state, so one pipeline serves concurrent
+queries. The Azure clients are opened once per process by `open_pipeline`, never per
+request.
 
 ### Retrieval: two search modes, two score scales
 
@@ -273,10 +273,9 @@ scores. A safe fallback is only auditable if the trail says what was rejected an
 far: for "What is the capital of France?" the best rejected control scored `1.222` against
 the `1.8` floor.
 
-The Azure SDK logs a full request/response header dump on every HTTP call, `httpx` a line
-per request, and the Agent Framework a line per workflow superstep, all at INFO. They are
-pinned to WARNING so they cannot bury the audit trail; setting `LOG_LEVEL=DEBUG` restores
-them for troubleshooting.
+The Azure SDK logs a full request/response header dump on every HTTP call, and `httpx` a
+line per request, both at INFO. They are pinned to WARNING so they cannot bury the audit
+trail; setting `LOG_LEVEL=DEBUG` restores them for troubleshooting.
 
 ## Tests and static analysis
 

@@ -176,6 +176,21 @@ Agents (each its own module, single responsibility):
 - **`DocumentRetrievalEvaluator` needs a `cast`.** Its stub types the call arguments as narrower `TypedDict`s than the harness's `list[dict[str, Any]]` Protocol (and `list` is invariant), though a `TypedDict` *is* a dict at runtime. A single localized `cast` at construction bridges the nominal gap without importing the SDK's types into the decoupled harness module.
 - **The report is deterministic (no timestamp) but the pipeline is not.** Re-running the eval yields slightly different retrieval sets and metrics because the reasoning-model planner and response are not bit-exact reproducible; the committed numbers are one representative run.
 
+## Phase 5.5 — Antigravity Gap Review
+
+Issues:
+
+- [ ] **Fragile Evaluation Execution**: Wrap LLM judge calls (`GroundednessEvaluator` and `RelevanceEvaluator` in `evaluation.py`) in retry logic using the `tenacity` library. This ensures transient Azure OpenAI API errors (e.g. rate limits or network blips) do not crash the entire evaluation run. If all retries fail, log a `None` score instead of halting the process.
+- [ ] **Silent Token Truncation Risk**: Implement explicit token counting (using `tiktoken` for `text-embedding-3-small`) or a chunking strategy in `dataset.py` before calling the embeddings API. This prevents the API from silently truncating long control statements or returning a 400 error, which damages semantic retrieval.
+- [ ] **Non-Deterministic Fallbacks**: Introduce a deterministic routing/classification step prior to invoking the Planner Agent. By enforcing an explicit domain-check or a semantic distance threshold against a "domain core" embedding, out-of-domain queries will short-circuit to the safe fallback immediately without relying on the LLM.
+- [ ] **Prompt Versioning**: Extract hardcoded system prompts and instructions from the agent modules (e.g., `planner.py`, `response.py`) and move them into dedicated configuration files (like YAML or JSON). This enables prompts to be version-controlled, reviewed, and tested against the golden set independently of Python code changes.
+
+Consider introducing external libraries:
+
+- [ ] **LlamaIndex**: Replace the manual retrieval logic and custom search wrappers with LlamaIndex. Use it to handle Azure AI Search index connection, document ingestion, and advanced retrieval strategies out of the box.
+- [ ] **PydanticAI**: Refactor the multi-agent system (currently using Microsoft Agent Framework) to use PydanticAI. This provides native typed LLM responses and a cleaner abstraction for agent orchestration.
+- [ ] **Ragas**: Replace the custom precision/recall evaluation logic and `azure-ai-evaluation` with the Ragas framework to natively compute Context Precision, Context Recall, Faithfulness (Groundedness), and Answer Relevance using LLMs-as-a-judge.
+
 ## Phase 6 — Load test + SLA extrapolation
 
 - [ ] `loadtest/locustfile.py`: drives `POST /query` with a realistic query mix; run at ~10 concurrent users for ≥5 minutes against uvicorn (multiple workers).

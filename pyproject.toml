@@ -51,6 +51,9 @@ dev = [
 # and `loadtest/` land as top-level directories in later phases.
 packages = ["llm_policy_library", "llm_policy_library.agents"]
 
+[tool.setuptools.package-data]
+"llm_policy_library" = ["*.json"]
+
 [tool.mypy]
 check_untyped_defs = true
 disallow_untyped_defs = true

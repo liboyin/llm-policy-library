@@ -26,6 +26,7 @@ from pydantic import ValidationError
 
 from llm_policy_library.config import ReasoningEffort
 from llm_policy_library.models import PlannerOutput, PlanStep, QueryPlan
+from llm_policy_library.prompts import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -33,26 +34,6 @@ logger = logging.getLogger(__name__)
 # control families ("access control *and* logging"). Beyond that the steps start
 # retrieving the same controls while still costing a round trip each.
 MAX_PLAN_STEPS: Final = 3
-
-PLANNER_INSTRUCTIONS: Final = f"""\
-You plan searches over a corpus of NIST SP 800-53 Rev 5 security control \
-statements, held in an Azure AI Search index. Each document is one control or \
-control enhancement: its ID (such as AC-2 or AC-2.1), title, family, and the \
-text of its requirement.
-
-Decompose the user's question into 1 to {MAX_PLAN_STEPS} search steps. Use one \
-step unless the question genuinely spans separate topics; add a step only when \
-it would surface controls the other steps would miss.
-
-Each `search_query` is sent to that index, not to a web search engine. The index \
-is searched semantically, so write a short natural-language phrase naming the \
-security topic, the way a control statement would describe the requirement. A \
-control ID on its own is also a good query. Do not pile up synonyms: a long \
-keyword list scores measurably worse than a focused phrase. Never use \
-search-engine operators such as `site:`, quotes, `OR`, or `AND`.
-
-Each `purpose` states in one sentence what the step is meant to find.
-"""
 
 # The Planner is the only agent that constrains the model's output shape, so it
 # is the only one whose options carry a `response_format` — and that schema is
@@ -82,7 +63,8 @@ def build_planner(
     # Typing the value loosely beats vendoring a literal that is missing a member.
     reasoning: Any = {"effort": reasoning_effort}
     options: PlannerOptions = {"response_format": PlannerOutput, "reasoning": reasoning}
-    return Agent(chat_client, PLANNER_INSTRUCTIONS, name="planner", default_options=options)
+    instructions = get_prompt("planner_instructions", max_plan_steps=MAX_PLAN_STEPS)
+    return Agent(chat_client, instructions, name="planner", default_options=options)
 
 
 def usable_steps(steps: list[PlanStep]) -> list[PlanStep]:

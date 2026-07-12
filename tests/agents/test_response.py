@@ -7,6 +7,7 @@ import pytest
 
 import llm_policy_library.agents.response as testee
 from llm_policy_library.models import RetrievedDocument
+from llm_policy_library.prompts import get_prompt
 
 
 def make_document(control_id: str, score: float = 2.2) -> RetrievedDocument:
@@ -52,8 +53,9 @@ def test_build_response_agent_sets_the_configured_effort_and_no_response_format(
 
 def test_response_instructions_forbid_uncited_and_invented_controls() -> None:
     """The prompt is the first grounding defence; citation checking is the second."""
-    assert "Use only the supplied controls" in testee.RESPONSE_INSTRUCTIONS
-    assert "never invent an ID" in testee.RESPONSE_INSTRUCTIONS
+    instructions = get_prompt("response_instructions")
+    assert "Use only the supplied controls" in instructions
+    assert "never invent an ID" in instructions
 
 
 def test_format_documents_labels_each_control_with_the_id_to_cite() -> None:
@@ -128,7 +130,7 @@ def test_safe_fallback_cites_nothing_and_marks_itself() -> None:
 
     assert response.is_fallback is True
     assert response.citations == []
-    assert response.answer == testee.SAFE_FALLBACK_MESSAGE
+    assert response.answer == get_prompt("safe_fallback_message")
 
 
 async def test_generate_response_returns_the_fallback_without_calling_the_model() -> None:

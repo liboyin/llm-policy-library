@@ -27,31 +27,9 @@ from agent_framework.openai import OpenAIChatClient, OpenAIChatOptions
 
 from llm_policy_library.config import ReasoningEffort
 from llm_policy_library.models import GroundedResponse, RetrievedDocument
+from llm_policy_library.prompts import get_prompt
 
 logger = logging.getLogger(__name__)
-
-SAFE_FALLBACK_MESSAGE: Final = (
-    "I could not find any NIST SP 800-53 control relevant to that question in "
-    "the policy library, so I cannot answer it. Try rephrasing the question in "
-    "terms of a security control, a control family, or a control ID such as AC-2."
-)
-
-RESPONSE_INSTRUCTIONS: Final = """\
-You answer questions about enterprise security policy using only the NIST SP \
-800-53 Rev 5 controls supplied with each question.
-
-Rules, in order of precedence:
-
-1. Use only the supplied controls. Never rely on knowledge of NIST SP 800-53, or \
-of any other standard, that is not present in the text you were given.
-2. Cite every control you use inline, in square brackets, by its exact ID as \
-supplied: [ac-2], [ac-2.1]. Cite it where you use it, not in a list at the end.
-3. Never cite a control that was not supplied to you, and never invent an ID.
-4. If the supplied controls do not answer the question, say so plainly and \
-describe what they do cover. Do not fill the gap.
-
-Answer in prose, briefly, at the level of detail the question asks for.
-"""
 
 # Control IDs are a two-letter family, a number, and optionally an enhancement
 # number: `ac-2`, `ac-2.1`. Matching the shape rather than a fixed family list
@@ -82,7 +60,8 @@ def build_response_agent(
     # See `planner.build_planner` on why the effort value is typed loosely.
     reasoning: Any = {"effort": reasoning_effort}
     options: ResponseOptions = {"reasoning": reasoning}
-    return Agent(chat_client, RESPONSE_INSTRUCTIONS, name="response", default_options=options)
+    instructions = get_prompt("response_instructions")
+    return Agent(chat_client, instructions, name="response", default_options=options)
 
 
 def format_documents(documents: Iterable[RetrievedDocument]) -> str:
@@ -133,7 +112,8 @@ def safe_fallback() -> GroundedResponse:
     Returns:
         The fixed fallback message, citing nothing.
     """
-    return GroundedResponse(answer=SAFE_FALLBACK_MESSAGE, citations=[], is_fallback=True)
+    message = get_prompt("safe_fallback_message")
+    return GroundedResponse(answer=message, citations=[], is_fallback=True)
 
 
 async def generate_response(

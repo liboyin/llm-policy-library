@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import llm_policy_library.orchestrator as testee
-from llm_policy_library.agents.response import SAFE_FALLBACK_MESSAGE
 from llm_policy_library.config import Settings
+from llm_policy_library.prompts import get_prompt
 from llm_policy_library.models import (
     GroundedResponse,
     PipelineResult,
@@ -324,7 +324,7 @@ async def test_answer_query_returns_the_safe_fallback_when_nothing_clears_the_fl
         result = await pipeline.answer_query("What is the capital of France?")
 
     assert result.response.is_fallback is True
-    assert result.response.answer == SAFE_FALLBACK_MESSAGE
+    assert result.response.answer == get_prompt("safe_fallback_message")
     assert result.documents == []
     chat_agent.run.assert_not_awaited()
 

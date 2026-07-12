@@ -9,6 +9,7 @@ from pydantic import BaseModel, ValidationError
 
 import llm_policy_library.agents.planner as testee
 from llm_policy_library.models import PlannerOutput, PlanStep
+from llm_policy_library.prompts import get_prompt
 
 
 def make_step(search_query: str) -> PlanStep:
@@ -55,8 +56,9 @@ def test_build_planner_requests_the_searches_only_schema_and_configured_effort()
 
 def test_planner_instructions_forbid_web_search_operators() -> None:
     """The search text hits an Azure AI Search index; `site:` syntax retrieves nothing."""
-    assert "site:" in testee.PLANNER_INSTRUCTIONS
-    assert "Never use search-engine operators" in testee.PLANNER_INSTRUCTIONS
+    instructions = get_prompt("planner_instructions", max_plan_steps=testee.MAX_PLAN_STEPS)
+    assert "site:" in instructions
+    assert "Never use search-engine operators" in instructions
 
 
 def test_usable_steps_drops_a_step_with_a_blank_search_query() -> None:

@@ -25,6 +25,7 @@ See [TASK.md](TASK.md) for the goals this project implements and
 | [llm_policy_library/agents/planner.py](llm_policy_library/agents/planner.py) | Planner Agent — decomposes a question into 1–3 searches |
 | [llm_policy_library/agents/retrieval.py](llm_policy_library/agents/retrieval.py) | Retrieval Agent — searches the index and applies the relevance floor |
 | [llm_policy_library/agents/response.py](llm_policy_library/agents/response.py) | Response Agent — writes the grounded answer, or the safe fallback |
+| [llm_policy_library/agents/judges.py](llm_policy_library/agents/judges.py) | LLM-judge agents for evaluation — faithfulness and answer relevancy |
 | [llm_policy_library/orchestrator.py](llm_policy_library/orchestrator.py) | The pipeline wiring the three agents together |
 | [llm_policy_library/api.py](llm_policy_library/api.py) | FastAPI service — `POST /query`, `GET /healthz` |
 | [llm_policy_library/cli.py](llm_policy_library/cli.py) | `python -m llm_policy_library.cli "question"` — same pipeline, pretty-printed |
@@ -154,12 +155,12 @@ It also holds the evaluation output over the 15-query golden set (see below):
   controls, both metric views, judge scores, citations, answer).
 - `evaluation_transcripts.json` — the same, machine-readable, for every query.
 
-In the committed run, answer quality is strong — groundedness 5.0/5, relevance 5.0/5, and
-**zero invented citations** across all 13 on-topic queries — and both out-of-domain queries
-returned the safe fallback. Retrieval scored ~0.54 precision / ~0.71 recall on the base-family
-view (~0.27 / ~0.51 exact-ID); the gap is the retriever surfacing specific control enhancements
-above the broad base controls the golden set labels. Because the pipeline is a reasoning model,
-re-running produces slightly different numbers.
+In the committed run, answer quality is strong — faithfulness 5.0/5, answer relevancy 5.0/5,
+and **zero invented citations** across all 13 on-topic queries — and both out-of-domain queries
+returned the safe fallback. Retrieval scored ~0.62 recall on the base-family view (~0.46
+exact-ID) with NDCG@5 ~0.49; the gap between the views is the retriever surfacing specific
+control enhancements above the broad base controls the golden set labels. Because the pipeline
+is a reasoning model, re-running produces slightly different numbers.
 
 ## Setup
 
@@ -203,19 +204,27 @@ python evaluation/run_eval.py   # runs the golden set through the live pipeline 
 ```
 
 The harness runs every query in [evaluation/golden_set.json](evaluation/golden_set.json)
-through the pipeline and scores four things: retrieval (precision / recall / F1, plus
-NDCG@3 / XDCG@3 / fidelity from the Azure AI `DocumentRetrievalEvaluator`), answer quality
-(groundedness and relevance from LLM-judge evaluators on the same chat deployment), citation
-validity (every inline citation must have been retrieved), and the safe fallback on
-out-of-domain queries. It writes [samples/evaluation_report.md](samples/evaluation_report.md)
-and `samples/evaluation_transcripts.json`.
+through the pipeline and scores four things: retrieval (recall plus graded NDCG@k, both
+computed directly from the hand-labeled qrels — deterministic math, no external evaluator),
+answer quality (faithfulness and answer relevancy, integer 1–5, from two small PydanticAI
+judge agents on the same chat deployment the pipeline uses), citation validity (every inline
+citation must have been retrieved), and the safe fallback on out-of-domain queries. It writes
+[samples/evaluation_report.md](samples/evaluation_report.md) and
+`samples/evaluation_transcripts.json`.
 
-Precision/recall/F1 are reported two ways. **Exact-ID** credits only a retrieved control
-whose ID matches a labelled one. **Base-family** also credits a retrieved *enhancement* whose
-base control was labelled — `ia-2.6` counts toward the `ia-2` need — because in NIST SP 800-53
-an enhancement is a more specific form of its base control. The exact-ID column is a strict
-lower bound; the base-family column is the fairer measure for this hierarchical catalog, since
-the semantic retriever ranks specific enhancements above the broad base control.
+Recall is reported two ways. **Exact-ID** credits only a retrieved control whose ID matches
+a labelled one. **Base-family** also credits a retrieved *enhancement* whose base control was
+labelled — `ia-2.6` counts toward the `ia-2` need — because in NIST SP 800-53 an enhancement
+is a more specific form of its base control. The exact-ID column is a strict lower bound; the
+base-family column is the fairer measure for this hierarchical catalog, since the semantic
+retriever ranks specific enhancements above the broad base control. Recall gates answer
+quality (an answer can only be grounded in what was retrieved); NDCG@k — truncated at the
+pipeline's own `RETRIEVAL_TOP_K` and strictly exact-ID — covers ranking quality. Precision
+and F1 are deliberately not reported: at top-k 5 over a hierarchical catalog, precision
+penalizes retrieving related enhancements and is uninformative. The judge prompts live in the
+version-controlled prompt store ([prompts.json](llm_policy_library/prompts.json)); each judge
+call is retried with exponential backoff, and a judge that still fails records `None` for
+that metric (rendered as "—") instead of crashing the run.
 
 ## Configuration
 

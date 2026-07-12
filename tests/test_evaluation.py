@@ -1,7 +1,7 @@
 """Unit tests for `llm_policy_library.evaluation`."""
 
 import json
-from collections.abc import Mapping
+import math
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -17,6 +17,9 @@ from llm_policy_library.models import (
     RetrievalResult,
     RetrievedDocument,
 )
+
+# Most tests truncate NDCG at the pipeline's default top-k.
+K = 5
 
 
 def make_document(control_id: str, score: float = 2.5) -> RetrievedDocument:
@@ -93,38 +96,8 @@ class FakePipeline:
         return self._results[query]
 
 
-def make_doc_eval(
-    ndcg: float = 0.9, xdcg: float = 80.0, fidelity: float = 0.85, holes: int = 1
-) -> testee.DocumentRetrievalEval:
-    """Build a fake document-retrieval evaluator returning fixed graded metrics.
-
-    Args:
-        ndcg: NDCG@3 to report.
-        xdcg: XDCG@3 to report.
-        fidelity: Fidelity to report.
-        holes: Holes to report.
-
-    Returns:
-        The fake evaluator.
-    """
-
-    def _eval(
-        *, retrieval_ground_truth: list[dict[str, Any]], retrieved_documents: list[dict[str, Any]]
-    ) -> Mapping[str, Any]:
-        return {
-            "document_retrieval_properties": {
-                "ndcg@3": ndcg,
-                "xdcg@3": xdcg,
-                "fidelity": fidelity,
-                "holes": holes,
-            }
-        }
-
-    return _eval
-
-
-def make_groundedness(score: float = 5.0) -> testee.GroundednessEval:
-    """Build a fake groundedness judge returning a fixed score.
+def make_faithfulness(score: int = 5) -> testee.FaithfulnessJudge:
+    """Build a fake faithfulness judge returning a fixed score.
 
     Args:
         score: The score to report.
@@ -133,14 +106,14 @@ def make_groundedness(score: float = 5.0) -> testee.GroundednessEval:
         The fake judge.
     """
 
-    def _eval(*, query: str, response: str, context: str) -> Mapping[str, Any]:
-        return {"groundedness": score}
+    async def _judge(*, question: str, answer: str, context: str) -> int:
+        return score
 
-    return _eval
+    return _judge
 
 
-def make_relevance(score: float = 4.0) -> testee.RelevanceEval:
-    """Build a fake relevance judge returning a fixed score.
+def make_answer_relevancy(score: int = 4) -> testee.AnswerRelevancyJudge:
+    """Build a fake answer-relevancy judge returning a fixed score.
 
     Args:
         score: The score to report.
@@ -149,17 +122,20 @@ def make_relevance(score: float = 4.0) -> testee.RelevanceEval:
         The fake judge.
     """
 
-    def _eval(*, query: str, response: str) -> Mapping[str, Any]:
-        return {"relevance": score}
+    async def _judge(*, question: str, answer: str) -> int:
+        return score
 
-    return _eval
+    return _judge
 
 
-def exploding_doc_eval(
-    *, retrieval_ground_truth: list[dict[str, Any]], retrieved_documents: list[dict[str, Any]]
-) -> Mapping[str, Any]:
-    """A document-retrieval evaluator that fails if called at all."""
-    raise AssertionError("doc_eval must not be called when nothing was retrieved")
+async def exploding_faithfulness(*, question: str, answer: str, context: str) -> int:
+    """A faithfulness judge that fails if called at all."""
+    raise AssertionError("the faithfulness judge must not be called on a fallback")
+
+
+async def exploding_answer_relevancy(*, question: str, answer: str) -> int:
+    """An answer-relevancy judge that fails if called at all."""
+    raise AssertionError("the answer-relevancy judge must not be called on a fallback")
 
 
 def write_golden(path: Path, payload: Any) -> Path:
@@ -192,6 +168,20 @@ def test_golden_query_rejects_a_label_out_of_range() -> None:
     """A label outside 1..4 is a typo that would silently distort NDCG if admitted."""
     with pytest.raises(ValueError, match="outside 1..4"):
         testee.GoldenQuery(query="q", relevant={"ac-2": 5})
+
+
+def test_golden_query_rejects_case_duplicate_control_ids() -> None:
+    """The metrics lower-case IDs; case-duplicate qrels would silently drop one label."""
+    with pytest.raises(ValueError, match="unique ignoring case"):
+        testee.GoldenQuery(query="q", relevant={"AC-2": 2, "ac-2": 1})
+
+
+def test_answer_quality_rejects_a_score_off_the_judges_scale() -> None:
+    """An injected judge returning 0 or 42 must fail loudly, not silently skew the means."""
+    with pytest.raises(ValueError):
+        testee.AnswerQuality(faithfulness=0, answer_relevancy=4)
+    with pytest.raises(ValueError):
+        testee.AnswerQuality(faithfulness=5, answer_relevancy=42)
 
 
 def test_load_golden_set_parses_queries_in_file_order(tmp_path: Path) -> None:
@@ -237,32 +227,21 @@ def test_load_golden_set_reports_a_schema_violation(tmp_path: Path) -> None:
         testee.load_golden_set(path)
 
 
-def test_precision_recall_f1_scores_a_partial_hit() -> None:
-    """Precision, recall, and F1 are the user's headline retrieval requirement (D5)."""
-    precision, recall, f1 = testee.precision_recall_f1(
-        {"ac-2", "ac-3", "ac-6"}, ["ac-2", "ac-3", "pm-1", "pm-2"]
-    )
+def test_exact_recall_scores_a_partial_hit() -> None:
+    """Recall gates answer quality: it says whether the grounding set held the needed controls."""
+    recall = testee.exact_recall({"ac-2", "ac-3", "ac-6"}, ["ac-2", "ac-3", "pm-1", "pm-2"])
 
-    assert precision == pytest.approx(0.5)  # 2 of 4 retrieved are relevant
     assert recall == pytest.approx(2 / 3)  # 2 of 3 relevant were retrieved
-    assert f1 == pytest.approx(2 * 0.5 * (2 / 3) / (0.5 + 2 / 3))
 
 
-def test_precision_recall_f1_is_case_insensitive() -> None:
+def test_exact_recall_is_case_insensitive() -> None:
     """The index stores lower-case IDs; a case gap must not misreport a hit as a miss."""
-    precision, recall, _ = testee.precision_recall_f1({"AC-2"}, ["ac-2"])
-
-    assert (precision, recall) == (1.0, 1.0)
+    assert testee.exact_recall({"AC-2"}, ["ac-2"]) == 1.0
 
 
-def test_precision_recall_f1_handles_an_empty_retrieval() -> None:
+def test_exact_recall_handles_an_empty_retrieval() -> None:
     """A query that retrieved nothing scores zero, not a divide-by-zero crash."""
-    assert testee.precision_recall_f1({"ac-2"}, []) == (0.0, 0.0, 0.0)
-
-
-def test_precision_recall_f1_is_zero_when_nothing_matches() -> None:
-    """No overlap means F1 is defined as 0, not an indeterminate 0/0."""
-    assert testee.precision_recall_f1({"ac-2"}, ["pm-1"]) == (0.0, 0.0, 0.0)
+    assert testee.exact_recall({"ac-2"}, []) == 0.0
 
 
 def test_base_control_id_strips_the_enhancement_suffix() -> None:
@@ -271,39 +250,64 @@ def test_base_control_id_strips_the_enhancement_suffix() -> None:
     assert testee.base_control_id("ac-2") == "ac-2"
 
 
-def test_base_family_precision_recall_f1_credits_a_retrieved_enhancement() -> None:
+def test_base_family_recall_credits_a_retrieved_enhancement() -> None:
     """Retrieving ia-2.6 answers the 'ia-2' need, so it must count where exact-ID does not."""
     relevant = {"ia-2", "ia-5"}
     retrieved = ["ia-2.6", "ia-5.16", "ac-7.4"]
 
-    assert testee.precision_recall_f1(relevant, retrieved) == (0.0, 0.0, 0.0)
-    precision, recall, f1 = testee.base_family_precision_recall_f1(relevant, retrieved)
-    assert precision == pytest.approx(2 / 3)  # ia-2.6, ia-5.16 hit; ac-7.4 does not
-    assert recall == pytest.approx(1.0)  # both ia-2 and ia-5 families are covered
-    assert f1 == pytest.approx(2 * (2 / 3) * 1.0 / (2 / 3 + 1.0))
+    assert testee.exact_recall(relevant, retrieved) == 0.0
+    assert testee.base_family_recall(relevant, retrieved) == pytest.approx(1.0)
 
 
-def test_base_family_precision_recall_f1_handles_an_empty_retrieval() -> None:
+def test_base_family_recall_handles_an_empty_retrieval() -> None:
     """A family match must survive an empty retrieval as a clean zero, not a crash."""
-    assert testee.base_family_precision_recall_f1({"ia-2"}, []) == (0.0, 0.0, 0.0)
+    assert testee.base_family_recall({"ia-2"}, []) == 0.0
 
 
-def test_to_ground_truth_pairs_each_control_with_a_lower_cased_id() -> None:
-    """The evaluator pairs ground truth to results by exact id, so both sides must lower-case."""
-    assert testee.to_ground_truth({"AC-2": 2, "ac-3": 1}) == [
-        {"document_id": "ac-2", "query_relevance_label": 2},
-        {"document_id": "ac-3", "query_relevance_label": 1},
-    ]
+def test_ndcg_at_k_is_one_for_a_perfectly_ordered_retrieval() -> None:
+    """A run that ranks the strongly-relevant controls first must get the top score."""
+    assert testee.ndcg_at_k({"ac-2": 2, "ac-3": 1}, ["ac-2", "ac-3"], K) == pytest.approx(1.0)
 
 
-def test_to_retrieved_documents_lower_cases_the_id_and_keeps_the_score_as_rank_key() -> None:
-    """The evaluator orders by `relevance_score` and matches ids exactly, so ids must lower-case."""
-    documents = [make_document("AC-2", 3.1), make_document("ac-3", 2.0)]
+def test_ndcg_at_k_penalizes_ranking_a_weak_control_above_a_strong_one() -> None:
+    """NDCG exists to reward ranking quality; swapping grades must cost score, unlike recall."""
+    relevant = {"ac-2": 2, "ac-3": 1}
 
-    assert testee.to_retrieved_documents(documents) == [
-        {"document_id": "ac-2", "relevance_score": 3.1},
-        {"document_id": "ac-3", "relevance_score": 2.0},
-    ]
+    reversed_order = testee.ndcg_at_k(relevant, ["ac-3", "ac-2"], K)
+
+    # Hand-computed: DCG = 1/log2(2) + 2/log2(3); ideal DCG = 2/log2(2) + 1/log2(3).
+    expected = (1 + 2 / math.log2(3)) / (2 + 1 / math.log2(3))
+    assert reversed_order == pytest.approx(expected)
+    assert reversed_order < 1.0
+
+
+def test_ndcg_at_k_gives_no_gain_to_an_unlabelled_control() -> None:
+    """An unlabelled retrieval pushes labelled ones down the discount; it must not add gain."""
+    with_hole = testee.ndcg_at_k({"ac-2": 2}, ["pm-1", "ac-2"], K)
+
+    assert with_hole == pytest.approx((2 / math.log2(3)) / 2)
+
+
+def test_ndcg_at_k_ignores_a_relevant_control_ranked_beyond_k() -> None:
+    """@k means @k: a hit below the cutoff is a recall problem, invisible to a truncated NDCG."""
+    assert testee.ndcg_at_k({"ac-2": 2}, ["pm-1", "pm-2", "ac-2"], 2) == 0.0
+
+
+def test_ndcg_at_k_truncates_the_ideal_ranking_too() -> None:
+    """With more qrels than k, a full top-k of top-grade controls must still score 1.0."""
+    relevant = {"ac-2": 2, "ac-3": 2, "ac-6": 2}
+
+    assert testee.ndcg_at_k(relevant, ["ac-2", "ac-3"], 2) == pytest.approx(1.0)
+
+
+def test_ndcg_at_k_handles_an_empty_retrieval() -> None:
+    """A query that retrieved nothing scores zero, not a divide-by-zero crash."""
+    assert testee.ndcg_at_k({"ac-2": 2}, [], K) == 0.0
+
+
+def test_ndcg_at_k_is_case_insensitive() -> None:
+    """The index stores lower-case IDs; a case gap must not zero the graded metric."""
+    assert testee.ndcg_at_k({"AC-2": 2}, ["ac-2"], K) == pytest.approx(1.0)
 
 
 def test_citation_check_separates_grounded_from_invented() -> None:
@@ -315,7 +319,7 @@ def test_citation_check_separates_grounded_from_invented() -> None:
 
 
 async def test_evaluate_query_scores_an_on_topic_query_end_to_end() -> None:
-    """The on-topic path must combine set metrics, graded metrics, judges, and citations."""
+    """The on-topic path must combine recall, NDCG, both judges, and the citation check."""
     query = "Summarise requirements for access control"
     documents = [make_document("ac-2", 3.0), make_document("ac-3", 2.5)]
     result = make_result(query, documents, "Use [ac-2] and [ac-3].", ["ac-2", "ac-3"])
@@ -323,21 +327,23 @@ async def test_evaluate_query_scores_an_on_topic_query_end_to_end() -> None:
     golden = testee.GoldenQuery(query=query, relevant={"ac-2": 2, "ac-3": 1, "ac-6": 2})
 
     evaluation = await testee.evaluate_query(
-        pipeline, make_doc_eval(), make_groundedness(5.0), make_relevance(4.0), golden
+        pipeline, make_faithfulness(5), make_answer_relevancy(4), golden, K
     )
 
     assert evaluation.retrieval is not None
-    assert evaluation.retrieval.precision == pytest.approx(1.0)
     assert evaluation.retrieval.recall == pytest.approx(2 / 3)
     assert evaluation.retrieval.family_recall == pytest.approx(2 / 3)
-    assert evaluation.retrieval.ndcg_at_3 == pytest.approx(0.9)
-    assert evaluation.answer_quality == testee.AnswerQuality(groundedness=5.0, relevance=4.0)
+    # ac-2(2) then ac-3(1), ac-6 missing: DCG = 2 + 1/log2(3); the ideal
+    # front-loads both grade-2 controls: 2 + 2/log2(3) + 1/log2(4).
+    expected_ndcg = (2 + 1 / math.log2(3)) / (2 + 2 / math.log2(3) + 1 / 2)
+    assert evaluation.retrieval.ndcg == pytest.approx(expected_ndcg)
+    assert evaluation.answer_quality == testee.AnswerQuality(faithfulness=5, answer_relevancy=4)
     assert evaluation.citations is not None and evaluation.citations.invented == []
     assert evaluation.passed is True
 
 
 async def test_evaluate_query_grounds_the_judge_in_the_retrieved_control_text() -> None:
-    """A groundedness judge fed the wrong context judges nothing; it must see the real controls."""
+    """A faithfulness judge fed the wrong context judges nothing; it must see the real controls."""
     query = "access control"
     documents = [make_document("ac-2")]
     result = make_result(query, documents, "Use [ac-2].", ["ac-2"])
@@ -345,17 +351,17 @@ async def test_evaluate_query_grounds_the_judge_in_the_retrieved_control_text() 
     golden = testee.GoldenQuery(query=query, relevant={"ac-2": 2})
     seen: dict[str, str] = {}
 
-    def capturing_groundedness(*, query: str, response: str, context: str) -> Mapping[str, Any]:
+    async def capturing_faithfulness(*, question: str, answer: str, context: str) -> int:
         seen["context"] = context
-        seen["response"] = response
-        return {"groundedness": 5.0}
+        seen["answer"] = answer
+        return 5
 
     await testee.evaluate_query(
-        pipeline, make_doc_eval(), capturing_groundedness, make_relevance(), golden
+        pipeline, capturing_faithfulness, make_answer_relevancy(), golden, K
     )
 
     assert "Statement of ac-2" in seen["context"], "the judge saw the retrieved control's text"
-    assert seen["response"] == "Use [ac-2].", "the judge scored the pipeline's actual answer"
+    assert seen["answer"] == "Use [ac-2].", "the judge scored the pipeline's actual answer"
 
 
 async def test_evaluate_query_fails_a_query_whose_answer_invents_a_citation() -> None:
@@ -367,7 +373,7 @@ async def test_evaluate_query_fails_a_query_whose_answer_invents_a_citation() ->
     golden = testee.GoldenQuery(query=query, relevant={"ac-2": 2})
 
     evaluation = await testee.evaluate_query(
-        pipeline, make_doc_eval(), make_groundedness(), make_relevance(), golden
+        pipeline, make_faithfulness(), make_answer_relevancy(), golden, K
     )
 
     assert evaluation.citations is not None and evaluation.citations.invented == ["pm-1"]
@@ -375,39 +381,67 @@ async def test_evaluate_query_fails_a_query_whose_answer_invents_a_citation() ->
 
 
 async def test_evaluate_query_skips_judges_when_an_on_topic_query_falls_back() -> None:
-    """A fallback has no documents to ground against, so the LLM judges must not run."""
+    """A fallback has no answer to ground, so neither LLM judge may spend a model call."""
     query = "access control"
     result = make_result(query, [], "I could not find any relevant control.", [], True)
     pipeline = FakePipeline({query: result})
     golden = testee.GoldenQuery(query=query, relevant={"ac-2": 2})
 
     evaluation = await testee.evaluate_query(
-        pipeline, exploding_doc_eval, make_groundedness(), make_relevance(), golden
+        pipeline, exploding_faithfulness, exploding_answer_relevancy, golden, K
     )
 
     assert evaluation.answer_quality is None, "no answer to judge"
     assert evaluation.retrieval is not None and evaluation.retrieval.recall == 0.0
-    assert evaluation.retrieval.holes == 0, "the graded evaluator was skipped, not called on nothing"
+    assert evaluation.retrieval.ndcg == 0.0
     assert evaluation.passed is False
 
 
-async def test_evaluate_query_logs_none_quality_on_judge_failure(caplog: pytest.LogCaptureFixture) -> None:
-    """If an LLM judge fails persistently, the evaluation continues with a None quality score."""
+async def test_evaluate_query_retries_a_judge_through_a_transient_failure() -> None:
+    """The retries exist so one rate-limit blip cannot blank a score the judge would have given."""
+    query = "access control"
+    documents = [make_document("ac-2")]
+    result = make_result(query, documents, "Use [ac-2].", ["ac-2"])
+    pipeline = FakePipeline({query: result})
+    golden = testee.GoldenQuery(query=query, relevant={"ac-2": 2})
+    calls = {"count": 0}
+
+    async def flaky_faithfulness(*, question: str, answer: str, context: str) -> int:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise ValueError("transient rate limit")
+        return 5
+
+    with patch("asyncio.sleep", AsyncMock()):
+        evaluation = await testee.evaluate_query(
+            pipeline, flaky_faithfulness, make_answer_relevancy(4), golden, K
+        )
+
+    assert calls["count"] == 2, "the first failure was retried, not recorded"
+    assert evaluation.answer_quality == testee.AnswerQuality(faithfulness=5, answer_relevancy=4)
+
+
+async def test_evaluate_query_records_none_for_only_the_failing_judge(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """If one judge fails persistently, its metric is None but the other's score survives."""
     query = "access control"
     documents = [make_document("ac-2")]
     result = make_result(query, documents, "Use [ac-2].", ["ac-2"])
     pipeline = FakePipeline({query: result})
     golden = testee.GoldenQuery(query=query, relevant={"ac-2": 2})
 
-    def failing_judge(*args: Any, **kwargs: Any) -> Mapping[str, Any]:
-        raise ValueError("Judge failed")
+    async def failing_faithfulness(*, question: str, answer: str, context: str) -> int:
+        raise ValueError("judge failed")
 
     with patch("asyncio.sleep", AsyncMock()):
         evaluation = await testee.evaluate_query(
-            pipeline, make_doc_eval(), failing_judge, make_relevance(), golden
+            pipeline, failing_faithfulness, make_answer_relevancy(4), golden, K
         )
 
-    assert evaluation.answer_quality is None
+    assert evaluation.answer_quality == testee.AnswerQuality(
+        faithfulness=None, answer_relevancy=4
+    )
     assert "LLM judge failed after retries" in caplog.text
     assert evaluation.retrieval is not None
     assert evaluation.citations is not None and evaluation.citations.invented == []
@@ -421,7 +455,7 @@ async def test_evaluate_query_passes_an_out_of_domain_query_that_falls_back() ->
     golden = testee.GoldenQuery(query=query, expect_fallback=True)
 
     evaluation = await testee.evaluate_query(
-        pipeline, exploding_doc_eval, make_groundedness(), make_relevance(), golden
+        pipeline, exploding_faithfulness, exploding_answer_relevancy, golden, K
     )
 
     assert evaluation.retrieval is None and evaluation.citations is None
@@ -436,7 +470,7 @@ async def test_evaluate_query_fails_an_out_of_domain_query_that_answers() -> Non
     golden = testee.GoldenQuery(query=query, expect_fallback=True)
 
     evaluation = await testee.evaluate_query(
-        pipeline, make_doc_eval(), make_groundedness(), make_relevance(), golden
+        pipeline, make_faithfulness(), make_answer_relevancy(), golden, K
     )
 
     assert evaluation.is_fallback is False
@@ -453,19 +487,8 @@ def test_aggregate_report_averages_on_topic_and_tallies_fallbacks() -> None:
         plan_steps=[],
         retrieved=[make_document("ac-2")],
         relevant={"ac-2": 2},
-        retrieval=testee.RetrievalMetrics(
-            precision=1.0,
-            recall=0.5,
-            f1=0.667,
-            family_precision=1.0,
-            family_recall=0.75,
-            family_f1=0.857,
-            ndcg_at_3=0.9,
-            xdcg_at_3=80.0,
-            fidelity=0.8,
-            holes=0,
-        ),
-        answer_quality=testee.AnswerQuality(groundedness=5.0, relevance=4.0),
+        retrieval=testee.RetrievalMetrics(recall=0.5, family_recall=0.75, ndcg=0.9),
+        answer_quality=testee.AnswerQuality(faithfulness=5, answer_relevancy=4),
         citations=testee.CitationCheck(grounded=["ac-2"], invented=[]),
         answer="a",
     )
@@ -486,10 +509,42 @@ def test_aggregate_report_averages_on_topic_and_tallies_fallbacks() -> None:
     aggregate = testee.aggregate_report([on_topic, fallback])
 
     assert aggregate.on_topic_count == 1
-    assert aggregate.mean_precision == pytest.approx(1.0)
-    assert aggregate.mean_groundedness == pytest.approx(5.0)
+    assert aggregate.mean_recall == pytest.approx(0.5)
+    assert aggregate.mean_family_recall == pytest.approx(0.75)
+    assert aggregate.mean_ndcg == pytest.approx(0.9)
+    assert aggregate.mean_faithfulness == pytest.approx(5.0)
+    assert aggregate.mean_answer_relevancy == pytest.approx(4.0)
     assert aggregate.fallback_count == 1 and aggregate.fallback_passed == 1
     assert aggregate.total_invented_citations == 0
+
+
+def test_aggregate_report_skips_a_none_score_instead_of_zeroing_the_mean() -> None:
+    """A failed judge must not drag the mean down as a zero; its query simply is not counted."""
+
+    def on_topic(name: str, quality: testee.AnswerQuality) -> testee.QueryEvaluation:
+        return testee.QueryEvaluation(
+            query=name,
+            expect_fallback=False,
+            is_fallback=False,
+            passed=True,
+            plan_steps=[],
+            retrieved=[make_document("ac-2")],
+            relevant={"ac-2": 2},
+            retrieval=testee.RetrievalMetrics(recall=1.0, family_recall=1.0, ndcg=1.0),
+            answer_quality=quality,
+            citations=testee.CitationCheck(grounded=["ac-2"], invented=[]),
+            answer="a",
+        )
+
+    aggregate = testee.aggregate_report(
+        [
+            on_topic("q1", testee.AnswerQuality(faithfulness=None, answer_relevancy=4)),
+            on_topic("q2", testee.AnswerQuality(faithfulness=5, answer_relevancy=2)),
+        ]
+    )
+
+    assert aggregate.mean_faithfulness == pytest.approx(5.0), "the None was skipped, not zeroed"
+    assert aggregate.mean_answer_relevancy == pytest.approx(3.0)
 
 
 def test_aggregate_report_reports_unmeasured_quality_as_none() -> None:
@@ -510,9 +565,9 @@ def test_aggregate_report_reports_unmeasured_quality_as_none() -> None:
 
     aggregate = testee.aggregate_report([fallback])
 
-    assert aggregate.mean_groundedness is None
-    assert aggregate.mean_relevance is None
-    assert aggregate.mean_precision == 0.0, "no on-topic queries averages to zero, not a crash"
+    assert aggregate.mean_faithfulness is None
+    assert aggregate.mean_answer_relevancy is None
+    assert aggregate.mean_recall == 0.0, "no on-topic queries averages to zero, not a crash"
 
 
 async def test_run_evaluation_evaluates_every_query_and_aggregates() -> None:
@@ -530,11 +585,12 @@ async def test_run_evaluation_evaluates_every_query_and_aggregates() -> None:
     ]
 
     report = await testee.run_evaluation(
-        pipeline, make_doc_eval(), make_groundedness(), make_relevance(), golden_set
+        pipeline, make_faithfulness(), make_answer_relevancy(), golden_set, K
     )
 
     assert pipeline.queries == [on_topic, off_topic], "queries run in golden-set order"
     assert [item.query for item in report.queries] == [on_topic, off_topic]
+    assert report.ndcg_k == K, "the transcripts must record what k the NDCG was computed at"
     assert report.aggregate.on_topic_count == 1
     assert report.aggregate.fallback_passed == 1
 
@@ -590,19 +646,8 @@ def test_build_markdown_report_renders_aggregate_and_every_query() -> None:
         "access control",
         retrieved=[make_document("ac-2", 3.0)],
         relevant={"ac-2": 2},
-        retrieval=testee.RetrievalMetrics(
-            precision=1.0,
-            recall=1.0,
-            f1=1.0,
-            family_precision=1.0,
-            family_recall=1.0,
-            family_f1=1.0,
-            ndcg_at_3=0.95,
-            xdcg_at_3=90.0,
-            fidelity=0.9,
-            holes=0,
-        ),
-        answer_quality=testee.AnswerQuality(groundedness=5.0, relevance=4.0),
+        retrieval=testee.RetrievalMetrics(recall=1.0, family_recall=1.0, ndcg=0.95),
+        answer_quality=testee.AnswerQuality(faithfulness=5, answer_relevancy=4),
         citations=testee.CitationCheck(grounded=["ac-2"], invented=[]),
         answer="Use [ac-2].",
     )
@@ -610,17 +655,23 @@ def test_build_markdown_report_renders_aggregate_and_every_query() -> None:
         "capital of France", expect_fallback=True, is_fallback=True, answer="no control"
     )
     report = testee.EvaluationReport(
-        queries=[on_topic, fallback], aggregate=testee.aggregate_report([on_topic, fallback])
+        ndcg_k=K,
+        queries=[on_topic, fallback],
+        aggregate=testee.aggregate_report([on_topic, fallback]),
     )
 
     markdown = testee.build_markdown_report(report)
 
     assert "# Evaluation report" in markdown
-    assert "| Precision | 1.000 | 1.000 |" in markdown
-    assert "| Groundedness (1-5) | 5.00 | — |" in markdown
+    assert "not comparable" in markdown, "the intro must warn the new NDCG differs from the old"
+    assert "| Recall | 1.000 | 1.000 |" in markdown
+    assert f"| NDCG@{K} | 0.950 | — |" in markdown
+    assert "| Faithfulness (1-5) | 5.00 | — |" in markdown
+    assert "| Answer relevancy (1-5) | 4.00 | — |" in markdown
     assert "### Q1: access control" in markdown
-    assert "**P/R/F1 (exact-ID):** 1.000 / 1.000 / 1.000" in markdown
-    assert "**P/R/F1 (base-family):** 1.000 / 1.000 / 1.000" in markdown
+    assert "**Recall:** 1.000 exact-ID / 1.000 base-family" in markdown
+    assert f"**NDCG@{K}:** 0.950" in markdown
+    assert "**Faithfulness:** 5/5 · **Answer relevancy:** 4/5" in markdown
     assert "ac-2 (3.00)" in markdown
     assert "Use [ac-2]." in markdown
     assert "### Q2: capital of France (out-of-domain)" in markdown
@@ -634,18 +685,7 @@ def test_build_markdown_report_marks_unmeasured_quality_and_a_missed_fallback() 
         is_fallback=True,
         retrieved=[],
         relevant={"ac-2": 2},
-        retrieval=testee.RetrievalMetrics(
-            precision=0.0,
-            recall=0.0,
-            f1=0.0,
-            family_precision=0.0,
-            family_recall=0.0,
-            family_f1=0.0,
-            ndcg_at_3=0.0,
-            xdcg_at_3=0.0,
-            fidelity=0.0,
-            holes=0,
-        ),
+        retrieval=testee.RetrievalMetrics(recall=0.0, family_recall=0.0, ndcg=0.0),
         citations=testee.CitationCheck(grounded=[], invented=[]),
         answer="fallback",
         passed=False,
@@ -659,13 +699,38 @@ def test_build_markdown_report_marks_unmeasured_quality_and_a_missed_fallback() 
         passed=False,
     )
     report = testee.EvaluationReport(
+        ndcg_k=K,
         queries=[unanswered, broken_fallback],
         aggregate=testee.aggregate_report([unanswered, broken_fallback]),
     )
 
     markdown = testee.build_markdown_report(report)
 
-    assert "| Groundedness (1-5) | — | — |" in markdown
+    assert "| Faithfulness (1-5) | — | — |" in markdown
     assert "(none)" in markdown, "an empty retrieval renders as (none), not a blank"
     assert "did NOT fall back ✗" in markdown
     assert "pm-1 (2.50)" in markdown, "a breached fallback must show what it wrongly retrieved"
+
+
+def test_build_markdown_report_renders_a_single_failed_judge_as_a_dash() -> None:
+    """A per-query None score must render as —, distinct from a real low score."""
+    partial = make_evaluation(
+        "access control",
+        retrieved=[make_document("ac-2")],
+        relevant={"ac-2": 2},
+        retrieval=testee.RetrievalMetrics(recall=1.0, family_recall=1.0, ndcg=1.0),
+        answer_quality=testee.AnswerQuality(faithfulness=None, answer_relevancy=4),
+        citations=testee.CitationCheck(grounded=["ac-2"], invented=[]),
+        answer="Use [ac-2].",
+    )
+    report = testee.EvaluationReport(
+        ndcg_k=K, queries=[partial], aggregate=testee.aggregate_report([partial])
+    )
+
+    markdown = testee.build_markdown_report(report)
+
+    assert "**Faithfulness:** — · **Answer relevancy:** 4/5" in markdown
+    assert (
+        "| Faithfulness (1-5) | — | — |" in markdown
+    ), "no judged faithfulness leaves the mean unmeasured"
+    assert "| Answer relevancy (1-5) | 4.00 | — |" in markdown

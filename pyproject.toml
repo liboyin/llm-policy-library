@@ -18,7 +18,6 @@ dependencies = [
   # Floor at 2: the code uses the post-1.0 surface (`OpenAIChatModel`,
   # `output_type`, `openai_reasoning_effort`).
   "pydantic-ai-slim[openai]>=2",
-  "azure-ai-evaluation",
   # Major-capped: 12.x reworked the index/vector API this project builds against.
   "azure-search-documents>=12.0.0,<13",
   "fastapi",

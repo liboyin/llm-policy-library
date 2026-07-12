@@ -8,33 +8,41 @@ fallback. This module turns that golden set and a live pipeline into an
 
 Four things are measured, and only one of them needs a chat model:
 
-* **Retrieval, set-based** — precision, recall, and F1 over the retrieved
-  grounding set against the golden qrels. These are pure set arithmetic. The
-  user asked for precision/recall specifically (decision D5); the Azure AI
-  Evaluation `DocumentRetrievalEvaluator` does *not* compute them — it reports
-  NDCG/XDCG/fidelity/holes — so they are computed here directly.
-* **Retrieval, graded** — NDCG@3, XDCG@3, fidelity, and holes from the injected
-  `DocumentRetrievalEvaluator`, which is pure local math over the graded qrels
-  (no network), rewarding a run that ranks the strongly-relevant controls above
-  the weakly-relevant and the irrelevant.
-* **Answer quality** — groundedness and relevance from LLM-judge evaluators, run
-  through the same Azure OpenAI deployment the pipeline uses.
+* **Retrieval, set-based** — recall of the retrieved grounding set against the
+  golden qrels, in two granularities (exact-ID and base-family). Pure set
+  arithmetic. Recall is the metric that gates answer quality: an answer can only
+  be grounded in controls the grounding set actually contains. Precision is
+  deliberately not reported — at a top-k of 5 over a hierarchical catalog it
+  penalizes retrieving related enhancements and is uninformative (user decision,
+  2026-07-12).
+* **Retrieval, graded** — NDCG@k computed here, directly from the graded qrels:
+  gain is the qrel label, discount is `1/log2(rank+1)`, and the ideal ranking is
+  the query's own labels sorted descending, truncated at k. It rewards a run
+  that ranks the strongly-relevant controls above the weakly-relevant, with no
+  external evaluator involved.
+* **Answer quality** — faithfulness and answer relevancy from two injected
+  LLM judges (concretely, the PydanticAI agents in `agents.judges`, run through
+  the same Azure OpenAI deployment the pipeline uses), each an integer 1-5.
 * **Citation validity** — every inline `[control-id]` in the answer must be a
   control that was actually retrieved. This reuses the Response Agent's own
   citation parser, so the check matches what the pipeline itself enforced; an
   invented citation here is a grounding regression.
 
-The evaluators are injected as `Protocol`s rather than imported, so this module
-stays independent of `azure-ai-evaluation` (a heavy import) and the whole harness
-is exercised in unit tests with plain fakes. `evaluation/run_eval.py` is the thin
-runner that constructs the real evaluators and a live pipeline and calls in here.
+The judges are injected as `Protocol`s rather than imported, so the whole
+harness is exercised in unit tests with plain fakes; the one agent-stack import
+is the Response Agent's citation parser and document formatter, reused so the
+checks score exactly what the pipeline itself enforced and produced. Each judge call is retried with exponential backoff; if
+a judge still fails, its score is recorded as `None` (rendered as "—") rather
+than crashing the run. `evaluation/run_eval.py` is the thin runner that
+constructs the real judges and a live pipeline and calls in here.
 """
 
 import json
 import logging
-from collections.abc import Collection, Iterable, Mapping, Sequence
+import math
+from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Final, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
@@ -44,17 +52,21 @@ from llm_policy_library.models import PipelineResult, PlanStep, RetrievedDocumen
 
 logger = logging.getLogger(__name__)
 
-# DocumentRetrievalEvaluator's k is fixed at 3, so its metric keys are suffixed
-# `@3`. Named here so the extraction and the report agree on one source.
-DOC_RETRIEVAL_K = 3
-_NDCG_KEY = f"ndcg@{DOC_RETRIEVAL_K}"
-_XDCG_KEY = f"xdcg@{DOC_RETRIEVAL_K}"
-
 # The graded-relevance labels the golden set may assign. 0 is excluded on
 # purpose: a control worth listing is at least weakly relevant, so a 0 would be a
 # labelling mistake, not a judgement.
 _MIN_LABEL = 1
 _MAX_LABEL = 4
+
+# One initial try plus two retries per judge call; transient Azure OpenAI
+# failures (rate limits, network blips) usually clear within that.
+_JUDGE_ATTEMPTS: Final = 3
+
+# The judges' score scale, mirroring `agents.judges.JudgeVerdict`. Re-declared
+# rather than imported so the harness enforces its own boundary even against an
+# injected judge that bypasses `JudgeVerdict`.
+_MIN_SCORE: Final = 1
+_MAX_SCORE: Final = 5
 
 
 class EvaluationError(RuntimeError):
@@ -85,6 +97,10 @@ class GoldenQuery(BaseModel):
             raise ValueError("a fallback query must not list relevant controls")
         if not self.expect_fallback and not self.relevant:
             raise ValueError("an on-topic query must list at least one relevant control")
+        if len({control_id.lower() for control_id in self.relevant}) != len(self.relevant):
+            # The metrics lower-case IDs, so case-duplicate keys would silently
+            # collapse to one arbitrary label instead of failing the labeller.
+            raise ValueError("relevant control IDs must be unique ignoring case")
         for control_id, label in self.relevant.items():
             if not _MIN_LABEL <= label <= _MAX_LABEL:
                 raise ValueError(
@@ -103,60 +119,53 @@ class GoldenSet(BaseModel):
 
 
 class RetrievalMetrics(BaseModel):
-    """Retrieval quality for one on-topic query, on two matching granularities.
+    """Retrieval quality for one on-topic query.
 
-    Precision, recall, and F1 are reported twice. The *exact-ID* view credits
-    only a retrieved control whose ID equals a labelled one. The *base-family*
-    view also credits a retrieved enhancement whose base control was labelled —
-    `ia-2.6` counts toward the `ia-2` need — because in NIST SP 800-53 an
-    enhancement is a more specific form of its base control, so retrieving it
-    genuinely answers the information need. The exact-ID view is a strict lower
-    bound; the base-family view is the fairer measure for this hierarchical
-    catalog. Both are shown so the granularity effect is explicit, not hidden.
+    Recall is reported on two matching granularities. The *exact-ID* view
+    credits only a retrieved control whose ID equals a labelled one. The
+    *base-family* view also credits a retrieved enhancement whose base control
+    was labelled — `ia-2.6` counts toward the `ia-2` need — because in NIST SP
+    800-53 an enhancement is a more specific form of its base control, so
+    retrieving it genuinely answers the information need. The exact-ID view is a
+    strict lower bound; the base-family view is the fairer measure for this
+    hierarchical catalog. Both are shown so the granularity effect is explicit,
+    not hidden. NDCG stays exact-ID.
 
     Attributes:
-        precision: Exact-ID precision.
-        recall: Exact-ID recall.
-        f1: Exact-ID F1.
-        family_precision: Base-family precision.
+        recall: Exact-ID recall of the grounding set against the qrels.
         family_recall: Base-family recall.
-        family_f1: Base-family F1.
-        ndcg_at_3: Normalized discounted cumulative gain at 3, from the graded
-            exact-ID qrels; rewards ranking strongly-relevant controls first.
-        xdcg_at_3: Extended DCG at 3. The evaluator's scale runs to 100 only when
-            graded labels reach its maximum of 4; with this golden set's 1-2
-            labels the achievable ceiling is about 50 (a perfectly-ranked query
-            scores ~50, not 100), so read it against that, not against 100.
-        fidelity: The evaluator's fidelity metric over the full result set.
-        holes: Retrieved controls carrying no ground-truth label at all.
+        ndcg: Normalized discounted cumulative gain at the report's `ndcg_k`,
+            from the graded exact-ID qrels; rewards ranking strongly-relevant
+            controls first.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    precision: float
     recall: float
-    f1: float
-    family_precision: float
     family_recall: float
-    family_f1: float
-    ndcg_at_3: float
-    xdcg_at_3: float
-    fidelity: float
-    holes: int
+    ndcg: float
 
 
 class AnswerQuality(BaseModel):
-    """LLM-judge scores for one answer, each on a 1-5 scale.
+    """LLM-judge scores for one answer, each an integer on a 1-5 scale.
+
+    A field is None when that judge failed even after retries; the aggregate
+    means skip None scores rather than treating them as zero.
 
     Attributes:
-        groundedness: How well the answer is supported by the retrieved controls.
-        relevance: How well the answer addresses the question.
+        faithfulness: How well the answer's claims are supported by the
+            retrieved control texts (groundedness), or None if unjudged.
+        answer_relevancy: How well the answer addresses the question, or None
+            if unjudged.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    groundedness: float
-    relevance: float
+    # The bounds re-enforce the judges' 1-5 scale at the harness's own boundary:
+    # an injected judge that returned 0 or 42 would otherwise silently skew the
+    # means that `JudgeVerdict`'s validation was supposed to protect.
+    faithfulness: int | None = Field(ge=_MIN_SCORE, le=_MAX_SCORE)
+    answer_relevancy: int | None = Field(ge=_MIN_SCORE, le=_MAX_SCORE)
 
 
 class CitationCheck(BaseModel):
@@ -213,19 +222,13 @@ class AggregateMetrics(BaseModel):
 
     Attributes:
         on_topic_count: Number of on-topic queries.
-        mean_precision: Mean exact-ID precision over on-topic queries.
         mean_recall: Mean exact-ID recall over on-topic queries.
-        mean_f1: Mean exact-ID F1 over on-topic queries.
-        mean_family_precision: Mean base-family precision over on-topic queries.
         mean_family_recall: Mean base-family recall over on-topic queries.
-        mean_family_f1: Mean base-family F1 over on-topic queries.
-        mean_ndcg_at_3: Mean NDCG@3 over on-topic queries.
-        mean_xdcg_at_3: Mean XDCG@3 over on-topic queries.
-        mean_fidelity: Mean fidelity over on-topic queries.
-        mean_groundedness: Mean groundedness over judged answers, or None if
+        mean_ndcg: Mean NDCG over on-topic queries, at the report's `ndcg_k`.
+        mean_faithfulness: Mean faithfulness over judged answers, or None if
             none were judged.
-        mean_relevance: Mean relevance over judged answers, or None if none
-            were judged.
+        mean_answer_relevancy: Mean answer relevancy over judged answers, or
+            None if none were judged.
         total_invented_citations: Invented citations summed over on-topic queries.
         fallback_count: Number of fallback queries.
         fallback_passed: How many fallback queries returned the safe fallback.
@@ -234,27 +237,30 @@ class AggregateMetrics(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     on_topic_count: int
-    mean_precision: float
     mean_recall: float
-    mean_f1: float
-    mean_family_precision: float
     mean_family_recall: float
-    mean_family_f1: float
-    mean_ndcg_at_3: float
-    mean_xdcg_at_3: float
-    mean_fidelity: float
-    mean_groundedness: float | None
-    mean_relevance: float | None
+    mean_ndcg: float
+    mean_faithfulness: float | None
+    mean_answer_relevancy: float | None
     total_invented_citations: int
     fallback_count: int
     fallback_passed: int
 
 
 class EvaluationReport(BaseModel):
-    """The full evaluation outcome: per-query results and their aggregate."""
+    """The full evaluation outcome: per-query results and their aggregate.
+
+    Attributes:
+        ndcg_k: The truncation depth every NDCG value in this report was
+            computed at (the pipeline's `RETRIEVAL_TOP_K`), recorded so the
+            transcripts stay self-describing.
+        queries: The per-query evaluations, in golden-set order.
+        aggregate: The rolled-up metrics.
+    """
 
     model_config = ConfigDict(frozen=True)
 
+    ndcg_k: int
     queries: list[QueryEvaluation]
     aggregate: AggregateMetrics
 
@@ -267,32 +273,19 @@ class PipelineLike(Protocol):
         ...
 
 
-class DocumentRetrievalEval(Protocol):
-    """An Azure AI `DocumentRetrievalEvaluator`-shaped callable."""
+class FaithfulnessJudge(Protocol):
+    """An async judge of how faithfully an answer sticks to its evidence."""
 
-    def __call__(
-        self,
-        *,
-        retrieval_ground_truth: list[dict[str, Any]],
-        retrieved_documents: list[dict[str, Any]],
-    ) -> Mapping[str, Any]:
-        """Score retrieved documents against graded ground-truth judgements."""
+    async def __call__(self, *, question: str, answer: str, context: str) -> int:
+        """Score the answer 1-5 against the retrieved control texts."""
         ...
 
 
-class GroundednessEval(Protocol):
-    """An Azure AI `GroundednessEvaluator`-shaped callable."""
+class AnswerRelevancyJudge(Protocol):
+    """An async judge of how well an answer addresses the question."""
 
-    def __call__(self, *, query: str, response: str, context: str) -> Mapping[str, Any]:
-        """Judge how well a response is grounded in the given context."""
-        ...
-
-
-class RelevanceEval(Protocol):
-    """An Azure AI `RelevanceEvaluator`-shaped callable."""
-
-    def __call__(self, *, query: str, response: str) -> Mapping[str, Any]:
-        """Judge how well a response addresses the query."""
+    async def __call__(self, *, question: str, answer: str) -> int:
+        """Score the answer 1-5 against the question."""
         ...
 
 
@@ -321,31 +314,23 @@ def load_golden_set(path: Path) -> list[GoldenQuery]:
         raise EvaluationError(f"golden set at {path} is invalid: {error}") from error
 
 
-def precision_recall_f1(
-    relevant: Collection[str], retrieved: Sequence[str]
-) -> tuple[float, float, float]:
-    """Compute precision, recall, and F1 of a retrieved set against the qrels.
+def exact_recall(relevant: Collection[str], retrieved: Iterable[str]) -> float:
+    """Compute recall of a retrieved set against the qrels, matching IDs exactly.
 
     All IDs are lower-cased before comparison so a case difference between the
-    golden set and the index cannot misreport a hit as a miss. `retrieved` is
-    treated as a set of distinct IDs — the caller passes the already-deduplicated
-    grounding set, so this only guards against an accidental repeat, whereas
-    `base_family_precision_recall_f1` deliberately counts each retrieved document.
+    golden set and the index cannot misreport a hit as a miss.
 
     Args:
         relevant: The relevant control IDs (the golden qrels).
         retrieved: The retrieved control IDs (the deduplicated grounding set).
 
     Returns:
-        `(precision, recall, f1)`. Precision is 0 when nothing was retrieved,
-        recall is 0 when nothing is relevant, and F1 is 0 when either is 0.
+        The fraction of relevant controls retrieved, or 0.0 when nothing is
+        relevant.
     """
     relevant_set = {control_id.lower() for control_id in relevant}
     retrieved_set = {control_id.lower() for control_id in retrieved}
-    hits = len(relevant_set & retrieved_set)
-    precision = hits / len(retrieved_set) if retrieved_set else 0.0
-    recall = hits / len(relevant_set) if relevant_set else 0.0
-    return precision, recall, _f1(precision, recall)
+    return len(relevant_set & retrieved_set) / len(relevant_set) if relevant_set else 0.0
 
 
 def base_control_id(control_id: str) -> str:
@@ -360,76 +345,63 @@ def base_control_id(control_id: str) -> str:
     return control_id.lower().split(".", 1)[0]
 
 
-def base_family_precision_recall_f1(
-    relevant: Collection[str], retrieved: Sequence[str]
-) -> tuple[float, float, float]:
-    """Compute precision, recall, and F1 at base-control granularity.
+def base_family_recall(relevant: Collection[str], retrieved: Iterable[str]) -> float:
+    """Compute recall at base-control granularity.
 
     Every ID is reduced to its base control first, so a retrieved enhancement
-    counts toward its base control's relevance. Precision judges each retrieved
-    document (so returning several enhancements of one relevant base is credited
-    once each); recall is over the distinct relevant base controls covered.
+    counts toward its base control's relevance: recall is over the distinct
+    relevant base controls covered.
 
     Args:
         relevant: The relevant control IDs (the golden qrels).
         retrieved: The retrieved control IDs.
 
     Returns:
-        `(precision, recall, f1)` at base-control granularity.
+        The fraction of relevant base controls covered, or 0.0 when nothing is
+        relevant.
     """
     relevant_bases = {base_control_id(control_id) for control_id in relevant}
-    retrieved_bases = [base_control_id(control_id) for control_id in retrieved]
-    matched = [base for base in retrieved_bases if base in relevant_bases]
-    precision = len(matched) / len(retrieved_bases) if retrieved_bases else 0.0
-    recall = len(set(matched)) / len(relevant_bases) if relevant_bases else 0.0
-    return precision, recall, _f1(precision, recall)
+    retrieved_bases = {base_control_id(control_id) for control_id in retrieved}
+    return (
+        len(relevant_bases & retrieved_bases) / len(relevant_bases) if relevant_bases else 0.0
+    )
 
 
-def _f1(precision: float, recall: float) -> float:
-    """Harmonic mean of precision and recall, defined as 0 when both are 0.
+def ndcg_at_k(relevant: Mapping[str, int], retrieved: Sequence[str], k: int) -> float:
+    """Compute graded NDCG@k of a ranking against the qrels, matching IDs exactly.
 
-    Args:
-        precision: The precision.
-        recall: The recall.
-
-    Returns:
-        The F1 score.
-    """
-    return 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-
-
-def to_ground_truth(relevant: Mapping[str, int]) -> list[dict[str, Any]]:
-    """Render the golden qrels as `DocumentRetrievalEvaluator` ground truth.
+    Standard graded NDCG: the gain of the document at (1-based) rank `r` is its
+    qrel label (0 if unlabelled), discounted by `1/log2(r+1)`; the ideal DCG
+    ranks the query's own labels in descending order. Both rankings are
+    truncated at `k`. IDs are lower-cased on both sides, matching the recall
+    metrics. The caller passes the deduplicated grounding set, so a repeated ID
+    cannot collect its gain twice.
 
     Args:
-        relevant: Control ID to graded-relevance label.
+        relevant: Control ID to graded-relevance label (the golden qrels).
+        retrieved: The retrieved control IDs, best first.
+        k: The truncation depth.
 
     Returns:
-        One `{document_id, query_relevance_label}` entry per relevant control.
-        IDs are lower-cased to match `to_retrieved_documents`, since the
-        evaluator pairs ground truth to results by exact `document_id` string.
+        NDCG@k in [0, 1]; 0.0 when nothing was retrieved or nothing is relevant.
     """
-    return [
-        {"document_id": control_id.lower(), "query_relevance_label": label}
-        for control_id, label in relevant.items()
-    ]
+    labels = {control_id.lower(): label for control_id, label in relevant.items()}
+    gains = [labels.get(control_id.lower(), 0) for control_id in retrieved[:k]]
+    ideal_gains = sorted(labels.values(), reverse=True)[:k]
+    ideal_dcg = _dcg(ideal_gains)
+    return _dcg(gains) / ideal_dcg if ideal_dcg else 0.0
 
 
-def to_retrieved_documents(documents: Sequence[RetrievedDocument]) -> list[dict[str, Any]]:
-    """Render the grounding set as `DocumentRetrievalEvaluator` input.
-
-    The evaluator uses `relevance_score` only to order the documents, so the
-    pipeline's own retrieval score serves directly as the ranking key.
+def _dcg(gains: Sequence[int]) -> float:
+    """Discounted cumulative gain of a gain vector, best first.
 
     Args:
-        documents: The retrieved controls, best first.
+        gains: The graded gain at each rank, rank 1 first.
 
     Returns:
-        One `{document_id, relevance_score}` entry per retrieved control. IDs are
-        lower-cased so ground-truth pairing is case-insensitive, matching the
-        set metrics' explicit case-folding.
+        The DCG.
     """
-    return [{"document_id": doc.id.lower(), "relevance_score": doc.score} for doc in documents]
+    return sum(gain / math.log2(rank + 1) for rank, gain in enumerate(gains, start=1))
 
 
 def citation_check(answer: str, retrieved_ids: Iterable[str]) -> CitationCheck:
@@ -450,99 +422,87 @@ def citation_check(answer: str, retrieved_ids: Iterable[str]) -> CitationCheck:
 
 
 def _retrieval_metrics(
-    documents: Sequence[RetrievedDocument],
-    relevant: Mapping[str, int],
-    doc_eval: DocumentRetrievalEval,
+    documents: Sequence[RetrievedDocument], relevant: Mapping[str, int], ndcg_k: int
 ) -> RetrievalMetrics:
     """Compute the exact-ID, base-family, and graded retrieval metrics.
 
-    The graded evaluator is skipped when nothing was retrieved, since its graded
-    metrics are all zero in that case and it need not be called.
-
     Args:
-        documents: The retrieved grounding set.
+        documents: The retrieved grounding set, best first.
         relevant: The golden qrels.
-        doc_eval: The graded document-retrieval evaluator.
+        ndcg_k: The NDCG truncation depth.
 
     Returns:
         The combined retrieval metrics.
     """
     retrieved_ids = [document.id for document in documents]
-    precision, recall, f1 = precision_recall_f1(relevant, retrieved_ids)
-    family_precision, family_recall, family_f1 = base_family_precision_recall_f1(
-        relevant, retrieved_ids
-    )
-    ndcg_at_3, xdcg_at_3, fidelity, holes = _graded_metrics(documents, relevant, doc_eval)
     return RetrievalMetrics(
-        precision=precision,
-        recall=recall,
-        f1=f1,
-        family_precision=family_precision,
-        family_recall=family_recall,
-        family_f1=family_f1,
-        ndcg_at_3=ndcg_at_3,
-        xdcg_at_3=xdcg_at_3,
-        fidelity=fidelity,
-        holes=holes,
+        recall=exact_recall(relevant, retrieved_ids),
+        family_recall=base_family_recall(relevant, retrieved_ids),
+        ndcg=ndcg_at_k(relevant, retrieved_ids, ndcg_k),
     )
 
 
-def _graded_metrics(
-    documents: Sequence[RetrievedDocument],
-    relevant: Mapping[str, int],
-    doc_eval: DocumentRetrievalEval,
-) -> tuple[float, float, float, int]:
-    """Read NDCG@3, XDCG@3, fidelity, and holes from the graded evaluator.
+async def _score_with_retries(
+    call: Callable[[], Awaitable[int]], metric: str, query: str
+) -> int | None:
+    """Run one judge call with retries, recording None if it keeps failing.
 
-    Skipped when nothing was retrieved: the evaluator's graded metrics are all
-    zero then, and an empty result set need not be scored. When it *is* called,
-    its keys are read strictly — a future `azure-ai-evaluation` key rename must
-    fail loudly here rather than silently zero every graded metric, which would
-    be the worst failure mode for an evaluation harness.
+    Retries with exponential backoff absorb transient Azure OpenAI failures
+    (rate limits, network blips). A judge that still fails must not crash the
+    whole evaluation run: the failure is logged and its score recorded as None,
+    which the aggregate means skip.
 
     Args:
-        documents: The retrieved grounding set.
-        relevant: The golden qrels.
-        doc_eval: The graded document-retrieval evaluator.
+        call: A no-argument coroutine factory performing the judge call.
+        metric: The metric name, for the failure log line.
+        query: The query being judged, for the failure log line.
 
     Returns:
-        `(ndcg_at_3, xdcg_at_3, fidelity, holes)`.
+        The judge's score, or None after the final failure.
     """
-    if not documents:
-        return 0.0, 0.0, 0.0, 0
-    result = doc_eval(
-        retrieval_ground_truth=to_ground_truth(relevant),
-        retrieved_documents=to_retrieved_documents(documents),
-    )
-    properties = result["document_retrieval_properties"]
-    return (
-        float(properties[_NDCG_KEY]),
-        float(properties[_XDCG_KEY]),
-        float(properties["fidelity"]),
-        int(properties["holes"]),
-    )
+    score: int | None = None
+    try:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(_JUDGE_ATTEMPTS),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            reraise=True,
+        ):
+            with attempt:
+                score = await call()
+    except Exception as error:
+        # `exc_info` keeps the traceback: a run whose whole column comes back
+        # "—" (say, a mis-deployed judge) must be diagnosable from the log.
+        logger.warning(
+            "LLM judge failed after retries",
+            extra={"metric": metric, "query": query, "error": str(error)},
+            exc_info=error,
+        )
+        return None
+    return score
 
 
 async def evaluate_query(
     pipeline: PipelineLike,
-    doc_eval: DocumentRetrievalEval,
-    groundedness_eval: GroundednessEval,
-    relevance_eval: RelevanceEval,
+    faithfulness_judge: FaithfulnessJudge,
+    answer_relevancy_judge: AnswerRelevancyJudge,
     golden: GoldenQuery,
+    ndcg_k: int,
 ) -> QueryEvaluation:
     """Run one golden query through the pipeline and score the outcome.
 
     A fallback query is scored only on whether the safe fallback fired; no
     retrieval or answer-quality metric applies. An on-topic query is scored on
-    retrieval (set and graded), citation validity, and — unless it itself fell
-    back, leaving no answer to judge — the two LLM-judge metrics.
+    retrieval (recall and NDCG), citation validity, and — unless it itself fell
+    back, leaving no answer to judge — the two LLM-judge metrics. Each judge is
+    retried independently and records None for its own metric on final failure,
+    so one flaky judge cannot blank the other's score.
 
     Args:
         pipeline: The policy pipeline.
-        doc_eval: The graded document-retrieval evaluator.
-        groundedness_eval: The groundedness LLM-judge.
-        relevance_eval: The relevance LLM-judge.
+        faithfulness_judge: The faithfulness LLM judge.
+        answer_relevancy_judge: The answer-relevancy LLM judge.
         golden: The labelled query to evaluate.
+        ndcg_k: The NDCG truncation depth.
 
     Returns:
         The per-query evaluation.
@@ -565,37 +525,26 @@ async def evaluate_query(
             answer=response.answer,
         )
 
-    retrieval = _retrieval_metrics(result.documents, golden.relevant, doc_eval)
-    citations = citation_check(
-        response.answer, [document.id for document in result.documents]
-    )
+    retrieval = _retrieval_metrics(result.documents, golden.relevant, ndcg_k)
+    citations = citation_check(response.answer, [document.id for document in result.documents])
 
     answer_quality: AnswerQuality | None = None
     if not response.is_fallback and result.documents:
         context = format_documents(result.documents)
-        try:
-            async for attempt in AsyncRetrying(
-                stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True
-            ):
-                with attempt:
-                    groundedness = groundedness_eval(
-                        query=golden.query, response=response.answer, context=context
-                    )
-            async for attempt in AsyncRetrying(
-                stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True
-            ):
-                with attempt:
-                    relevance = relevance_eval(query=golden.query, response=response.answer)
-            answer_quality = AnswerQuality(
-                groundedness=float(groundedness["groundedness"]),
-                relevance=float(relevance["relevance"]),
-            )
-        except Exception as e:
-            logger.warning(
-                "LLM judge failed after retries",
-                extra={"query": golden.query, "error": str(e)},
-            )
-            answer_quality = None
+        answer_quality = AnswerQuality(
+            faithfulness=await _score_with_retries(
+                lambda: faithfulness_judge(
+                    question=golden.query, answer=response.answer, context=context
+                ),
+                "faithfulness",
+                golden.query,
+            ),
+            answer_relevancy=await _score_with_retries(
+                lambda: answer_relevancy_judge(question=golden.query, answer=response.answer),
+                "answer_relevancy",
+                golden.query,
+            ),
+        )
 
     return QueryEvaluation(
         query=golden.query,
@@ -628,8 +577,9 @@ def aggregate_report(evaluations: Sequence[QueryEvaluation]) -> AggregateMetrics
     """Roll up per-query evaluations into means and totals.
 
     Retrieval and answer-quality means cover on-topic queries only; the fallback
-    tallies cover fallback queries only. Answer-quality means are None when no
-    answer was judged, so an empty run reports "not measured" rather than 0.
+    tallies cover fallback queries only. Each answer-quality mean skips queries
+    where that judge recorded None, and is itself None when no answer carried
+    that score, so an unjudged run reports "not measured" rather than 0.
 
     Args:
         evaluations: The per-query evaluations.
@@ -641,21 +591,17 @@ def aggregate_report(evaluations: Sequence[QueryEvaluation]) -> AggregateMetrics
     fallback = [item for item in evaluations if item.expect_fallback]
     retrieval = [item.retrieval for item in on_topic if item.retrieval is not None]
     quality = [item.answer_quality for item in on_topic if item.answer_quality is not None]
+    faithfulness = [item.faithfulness for item in quality if item.faithfulness is not None]
+    answer_relevancy = [
+        item.answer_relevancy for item in quality if item.answer_relevancy is not None
+    ]
     return AggregateMetrics(
         on_topic_count=len(on_topic),
-        mean_precision=_mean([metrics.precision for metrics in retrieval]),
         mean_recall=_mean([metrics.recall for metrics in retrieval]),
-        mean_f1=_mean([metrics.f1 for metrics in retrieval]),
-        mean_family_precision=_mean([metrics.family_precision for metrics in retrieval]),
         mean_family_recall=_mean([metrics.family_recall for metrics in retrieval]),
-        mean_family_f1=_mean([metrics.family_f1 for metrics in retrieval]),
-        mean_ndcg_at_3=_mean([metrics.ndcg_at_3 for metrics in retrieval]),
-        mean_xdcg_at_3=_mean([metrics.xdcg_at_3 for metrics in retrieval]),
-        mean_fidelity=_mean([metrics.fidelity for metrics in retrieval]),
-        mean_groundedness=(
-            _mean([item.groundedness for item in quality]) if quality else None
-        ),
-        mean_relevance=_mean([item.relevance for item in quality]) if quality else None,
+        mean_ndcg=_mean([metrics.ndcg for metrics in retrieval]),
+        mean_faithfulness=_mean(faithfulness) if faithfulness else None,
+        mean_answer_relevancy=_mean(answer_relevancy) if answer_relevancy else None,
         total_invented_citations=sum(
             len(item.citations.invented) for item in on_topic if item.citations is not None
         ),
@@ -666,10 +612,10 @@ def aggregate_report(evaluations: Sequence[QueryEvaluation]) -> AggregateMetrics
 
 async def run_evaluation(
     pipeline: PipelineLike,
-    doc_eval: DocumentRetrievalEval,
-    groundedness_eval: GroundednessEval,
-    relevance_eval: RelevanceEval,
+    faithfulness_judge: FaithfulnessJudge,
+    answer_relevancy_judge: AnswerRelevancyJudge,
     golden_set: Sequence[GoldenQuery],
+    ndcg_k: int,
 ) -> EvaluationReport:
     """Evaluate every golden query and aggregate the results.
 
@@ -678,19 +624,22 @@ async def run_evaluation(
 
     Args:
         pipeline: The policy pipeline.
-        doc_eval: The graded document-retrieval evaluator.
-        groundedness_eval: The groundedness LLM-judge.
-        relevance_eval: The relevance LLM-judge.
+        faithfulness_judge: The faithfulness LLM judge.
+        answer_relevancy_judge: The answer-relevancy LLM judge.
         golden_set: The labelled queries to evaluate.
+        ndcg_k: The NDCG truncation depth, normally the pipeline's
+            `RETRIEVAL_TOP_K`.
 
     Returns:
         The full evaluation report.
     """
     evaluations = [
-        await evaluate_query(pipeline, doc_eval, groundedness_eval, relevance_eval, golden)
+        await evaluate_query(pipeline, faithfulness_judge, answer_relevancy_judge, golden, ndcg_k)
         for golden in golden_set
     ]
-    return EvaluationReport(queries=evaluations, aggregate=aggregate_report(evaluations))
+    return EvaluationReport(
+        ndcg_k=ndcg_k, queries=evaluations, aggregate=aggregate_report(evaluations)
+    )
 
 
 def _format_optional(value: float | None, digits: int) -> str:
@@ -706,11 +655,24 @@ def _format_optional(value: float | None, digits: int) -> str:
     return f"{value:.{digits}f}" if value is not None else "—"
 
 
-def _aggregate_table(aggregate: AggregateMetrics) -> list[str]:
+def _format_score(score: int | None) -> str:
+    """Render an optional judge score out of 5, or an em dash when unjudged.
+
+    Args:
+        score: The 1-5 score, or None.
+
+    Returns:
+        `"<score>/5"`, or "—".
+    """
+    return f"{score}/5" if score is not None else "—"
+
+
+def _aggregate_table(aggregate: AggregateMetrics, ndcg_k: int) -> list[str]:
     """Render the aggregate metrics as a Markdown table.
 
     Args:
         aggregate: The rolled-up metrics.
+        ndcg_k: The NDCG truncation depth, for the row label.
 
     Returns:
         The table's lines.
@@ -725,15 +687,11 @@ def _aggregate_table(aggregate: AggregateMetrics) -> list[str]:
         "",
         "| Metric | Exact-ID | Base-family |",
         "|---|---|---|",
-        f"| Precision | {aggregate.mean_precision:.3f} | "
-        f"{aggregate.mean_family_precision:.3f} |",
         f"| Recall | {aggregate.mean_recall:.3f} | {aggregate.mean_family_recall:.3f} |",
-        f"| F1 | {aggregate.mean_f1:.3f} | {aggregate.mean_family_f1:.3f} |",
-        f"| NDCG@{DOC_RETRIEVAL_K} | {aggregate.mean_ndcg_at_3:.3f} | — |",
-        f"| XDCG@{DOC_RETRIEVAL_K} | {aggregate.mean_xdcg_at_3:.1f} | — |",
-        f"| Fidelity | {aggregate.mean_fidelity:.3f} | — |",
-        f"| Groundedness (1-5) | {_format_optional(aggregate.mean_groundedness, 2)} | — |",
-        f"| Relevance (1-5) | {_format_optional(aggregate.mean_relevance, 2)} | — |",
+        f"| NDCG@{ndcg_k} | {aggregate.mean_ndcg:.3f} | — |",
+        f"| Faithfulness (1-5) | {_format_optional(aggregate.mean_faithfulness, 2)} | — |",
+        "| Answer relevancy (1-5) | "
+        f"{_format_optional(aggregate.mean_answer_relevancy, 2)} | — |",
     ]
 
 
@@ -749,12 +707,13 @@ def _format_retrieved(documents: Sequence[RetrievedDocument]) -> str:
     return ", ".join(f"{doc.id} ({doc.score:.2f})" for doc in documents) or "(none)"
 
 
-def _query_section(index: int, item: QueryEvaluation) -> list[str]:
+def _query_section(index: int, item: QueryEvaluation, ndcg_k: int) -> list[str]:
     """Render one query's evaluation as a Markdown section.
 
     Args:
         index: 1-based position of the query in the golden set.
         item: The query's evaluation.
+        ndcg_k: The NDCG truncation depth, for the metric label.
 
     Returns:
         The section's lines.
@@ -777,9 +736,7 @@ def _query_section(index: int, item: QueryEvaluation) -> list[str]:
 
     plan = "; ".join(step.search_query for step in item.plan_steps)
     retrieved = _format_retrieved(item.retrieved)
-    qrels = ", ".join(
-        f"{control_id}({label})" for control_id, label in item.relevant.items()
-    )
+    qrels = ", ".join(f"{control_id}({label})" for control_id, label in item.relevant.items())
     lines = [
         f"### Q{index}: {item.query}",
         "",
@@ -790,23 +747,15 @@ def _query_section(index: int, item: QueryEvaluation) -> list[str]:
     if item.retrieval is not None:
         metrics = item.retrieval
         lines.append(
-            f"- **P/R/F1 (exact-ID):** {metrics.precision:.3f} / "
-            f"{metrics.recall:.3f} / {metrics.f1:.3f}"
-        )
-        lines.append(
-            f"- **P/R/F1 (base-family):** {metrics.family_precision:.3f} / "
-            f"{metrics.family_recall:.3f} / {metrics.family_f1:.3f}"
-        )
-        lines.append(
-            f"- **NDCG@{DOC_RETRIEVAL_K}:** {metrics.ndcg_at_3:.3f} · "
-            f"**XDCG@{DOC_RETRIEVAL_K}:** {metrics.xdcg_at_3:.1f} · "
-            f"**Fidelity:** {metrics.fidelity:.3f} · **Holes:** {metrics.holes}"
+            f"- **Recall:** {metrics.recall:.3f} exact-ID / "
+            f"{metrics.family_recall:.3f} base-family · "
+            f"**NDCG@{ndcg_k}:** {metrics.ndcg:.3f}"
         )
     if item.answer_quality is not None:
         quality = item.answer_quality
         lines.append(
-            f"- **Groundedness:** {quality.groundedness:.1f}/5 · "
-            f"**Relevance:** {quality.relevance:.1f}/5"
+            f"- **Faithfulness:** {_format_score(quality.faithfulness)} · "
+            f"**Answer relevancy:** {_format_score(quality.answer_relevancy)}"
         )
     if item.citations is not None:
         grounded = ", ".join(item.citations.grounded) or "none"
@@ -828,32 +777,33 @@ def build_markdown_report(report: EvaluationReport) -> str:
     Returns:
         The Markdown document.
     """
+    k = report.ndcg_k
     lines = [
         "# Evaluation report",
         "",
         "Retrieval and answer quality of the NIST SP 800-53 policy pipeline over "
-        "the hand-labeled golden set (`evaluation/golden_set.json`). Precision, "
-        "recall, and F1 are computed directly from the qrels; NDCG/XDCG/fidelity "
-        "come from the Azure AI `DocumentRetrievalEvaluator`; groundedness and "
-        "relevance are LLM-judge scores from the same Azure OpenAI deployment the "
-        "pipeline uses.",
+        "the hand-labeled golden set (`evaluation/golden_set.json`). Recall and "
+        f"graded NDCG@{k} are computed directly from the golden qrels — pure, "
+        "deterministic math with no external evaluator. Faithfulness and answer "
+        "relevancy are LLM-judge scores (integer 1-5) from two PydanticAI judge "
+        "agents on the same Azure OpenAI deployment the pipeline uses.",
         "",
-        "Precision/recall/F1 are shown two ways. **Exact-ID** credits only a "
-        "retrieved control whose ID matches a labelled one. **Base-family** also "
-        "credits a retrieved enhancement whose base control was labelled — "
-        "`ia-2.6` counts toward the `ia-2` need — because a NIST SP 800-53 "
-        "enhancement is a more specific form of its base control, so retrieving "
-        "it genuinely answers the need. The exact-ID column is a strict lower "
-        "bound; the base-family column is the fairer measure for this hierarchical "
-        "catalog. The graded NDCG/XDCG/fidelity stay exact-ID. Note the golden "
-        "set grades relevance 1-2, so XDCG@3's achievable ceiling is ~50, not "
-        "100 (a perfectly-ranked query scores ~50).",
+        "Recall is shown two ways. **Exact-ID** credits only a retrieved control "
+        "whose ID matches a labelled one. **Base-family** also credits a "
+        "retrieved enhancement whose base control was labelled — `ia-2.6` counts "
+        "toward the `ia-2` need — because a NIST SP 800-53 enhancement is a more "
+        "specific form of its base control, so retrieving it genuinely answers "
+        "the need. The exact-ID column is a strict lower bound; the base-family "
+        f"column is the fairer measure for this hierarchical catalog. NDCG@{k} "
+        "stays exact-ID, truncated at the pipeline's own top-k; it is computed "
+        "in-house and is **not comparable** to the NDCG@3 the Azure AI "
+        "`DocumentRetrievalEvaluator` reported in earlier committed runs.",
         "",
-        *_aggregate_table(report.aggregate),
+        *_aggregate_table(report.aggregate, k),
         "",
         "## Per-query results",
     ]
     for index, item in enumerate(report.queries, start=1):
         lines.append("")
-        lines.extend(_query_section(index, item))
+        lines.extend(_query_section(index, item, k))
     return "\n".join(lines) + "\n"

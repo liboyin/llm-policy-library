@@ -4,8 +4,9 @@ Invoke from the repository root::
 
     python evaluation/run_eval.py
 
-The run loads the golden set, opens a live pipeline, and constructs the three
-Azure AI Evaluation evaluators, then writes two artifacts to ``samples/``:
+The run loads the golden set, opens a live pipeline, and builds the two
+PydanticAI judge agents (faithfulness and answer relevancy) over the same chat
+deployment the pipeline uses, then writes two artifacts to ``samples/``:
 
 * ``evaluation_report.md`` — the human-readable report (TASK.md's "sample
   execution outputs" deliverable): an aggregate table plus a per-query section.
@@ -14,32 +15,32 @@ Azure AI Evaluation evaluators, then writes two artifacts to ``samples/``:
   answer.
 
 All the logic lives in ``llm_policy_library.evaluation``; this file is only the
-live wiring — settings, clients, evaluators, and file output — so it holds no
+live wiring — settings, clients, judge agents, and file output — so it holds no
 branching worth unit-testing, mirroring ``llm_policy_library.ingest``'s ``main``.
-The LLM-judge evaluators are built with ``is_reasoning_model=True`` because the
-deployed chat model is a reasoning model that rejects the sampling parameters the
-default judge configuration would send (decision D7).
+The judges share the pipeline's chat API version and reasoning-effort setting
+(the deployed model is a reasoning model that rejects ``temperature``/``top_p``/
+``seed``, decision D7), and the retrieval metrics' NDCG truncation depth is the
+pipeline's own ``RETRIEVAL_TOP_K``.
 """
 
 import asyncio
 import logging
+from functools import partial
 from pathlib import Path
-from typing import Final, cast
+from typing import Final
 
-from azure.ai.evaluation import (
-    AzureOpenAIModelConfiguration,
-    DocumentRetrievalEvaluator,
-    GroundednessEvaluator,
-    RelevanceEvaluator,
-)
+from openai import AsyncAzureOpenAI
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.azure import AzureProvider
 
-from llm_policy_library.config import load_settings
-from llm_policy_library.evaluation import (
-    DocumentRetrievalEval,
-    build_markdown_report,
-    load_golden_set,
-    run_evaluation,
+from llm_policy_library.agents.judges import (
+    build_answer_relevancy_judge,
+    build_faithfulness_judge,
+    judge_answer_relevancy,
+    judge_faithfulness,
 )
+from llm_policy_library.config import AZURE_OPENAI_CHAT_API_VERSION, load_settings
+from llm_policy_library.evaluation import build_markdown_report, load_golden_set, run_evaluation
 from llm_policy_library.logging_setup import configure_logging, correlation_context
 from llm_policy_library.orchestrator import open_pipeline
 
@@ -51,10 +52,6 @@ SAMPLES_DIR: Final = _REPO_ROOT / "samples"
 REPORT_PATH: Final = SAMPLES_DIR / "evaluation_report.md"
 TRANSCRIPTS_PATH: Final = SAMPLES_DIR / "evaluation_transcripts.json"
 
-# The chat deployment is a gpt-5-family reasoning model reached through the
-# Responses API; this preview api-version exposes the judge's reasoning path.
-EVAL_MODEL_API_VERSION: Final = "2024-12-01-preview"
-
 
 async def _evaluate() -> None:
     """Load, run, and write the evaluation, opening the live pipeline once."""
@@ -62,34 +59,45 @@ async def _evaluate() -> None:
     configure_logging(settings.log_level)
     golden_set = load_golden_set(GOLDEN_SET_PATH)
 
-    model_config = AzureOpenAIModelConfiguration(
-        azure_endpoint=settings.azure_openai_endpoint,
-        api_key=settings.azure_openai_api_key.get_secret_value(),
-        azure_deployment=settings.azure_openai_chat_deployment,
-        api_version=EVAL_MODEL_API_VERSION,
-    )
-    # The evaluator satisfies `DocumentRetrievalEval` at runtime; its stub types
-    # the arguments as narrower TypedDicts, so a cast bridges the nominal gap
-    # without importing the SDK's types into the decoupled harness module.
-    doc_eval = cast(DocumentRetrievalEval, DocumentRetrievalEvaluator())
-    groundedness_eval = GroundednessEvaluator(model_config, is_reasoning_model=True)
-    relevance_eval = RelevanceEvaluator(model_config, is_reasoning_model=True)
-
     with correlation_context() as run_id:
         logger.info(
             "evaluation started",
             extra={"run_id": run_id, "queries": len(golden_set)},
         )
-        async with open_pipeline(settings) as pipeline:
-            report = await run_evaluation(
-                pipeline, doc_eval, groundedness_eval, relevance_eval, golden_set
+        # The judges get their own chat client so their traffic cannot outlive
+        # this block; it is pinned to the same dated API version the pipeline's
+        # chat client uses (`config.py` is the single source for versions).
+        async with AsyncAzureOpenAI(
+            azure_endpoint=settings.azure_openai_endpoint,
+            api_key=settings.azure_openai_api_key.get_secret_value(),
+            api_version=AZURE_OPENAI_CHAT_API_VERSION,
+        ) as judge_client:
+            judge_model = OpenAIChatModel(
+                settings.azure_openai_chat_deployment,
+                provider=AzureProvider(openai_client=judge_client),
             )
+            effort = settings.llm_reasoning_effort
+            faithfulness_judge = partial(
+                judge_faithfulness, build_faithfulness_judge(judge_model, effort)
+            )
+            answer_relevancy_judge = partial(
+                judge_answer_relevancy, build_answer_relevancy_judge(judge_model, effort)
+            )
+            async with open_pipeline(settings) as pipeline:
+                report = await run_evaluation(
+                    pipeline,
+                    faithfulness_judge,
+                    answer_relevancy_judge,
+                    golden_set,
+                    ndcg_k=settings.retrieval_top_k,
+                )
         logger.info(
             "evaluation complete",
             extra={
                 "on_topic": report.aggregate.on_topic_count,
-                "mean_precision": report.aggregate.mean_precision,
                 "mean_recall": report.aggregate.mean_recall,
+                "mean_family_recall": report.aggregate.mean_family_recall,
+                "mean_ndcg": report.aggregate.mean_ndcg,
                 "fallback_passed": report.aggregate.fallback_passed,
                 "invented_citations": report.aggregate.total_invented_citations,
             },

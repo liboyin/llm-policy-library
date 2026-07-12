@@ -7,6 +7,9 @@ once, in `lifespan`, not per request — a request handler that called
 `load_settings()` itself would do blocking file I/O on the event loop and pay
 for a fresh Azure client on every call.
 
+`GET /` serves the browser frontend, a single static page that calls `/query`
+like any other client. It is a view over the same JSON, not a third code path.
+
 Two guarantees hold at the boundary a client actually sees:
 
 - A malformed request body (missing or blank `query`) never reaches the
@@ -21,9 +24,11 @@ import logging
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated, Final
 
 from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from llm_policy_library.config import load_settings
@@ -38,6 +43,10 @@ logger = logging.getLogger(__name__)
 SAFE_UPSTREAM_ERROR_MESSAGE: Final = (
     "The policy library is temporarily unavailable. Please try again."
 )
+
+# Resolved from the package, not the working directory — the same reasoning as
+# `config.DEFAULT_ENV_FILE`: `uvicorn` launched from anywhere must find the page.
+FRONTEND_PATH: Final = Path(__file__).resolve().parent.parent / "static" / "index.html"
 
 
 class QueryRequest(BaseModel):
@@ -114,6 +123,25 @@ async def get_pipeline() -> PolicyPipeline:
         The process-wide pipeline.
     """
     return app.state.pipeline
+
+
+@app.get("/", response_class=FileResponse)
+async def frontend() -> FileResponse:
+    """Serve the browser frontend.
+
+    Returns:
+        The static page, which calls `POST /query` from the browser.
+
+    Raises:
+        HTTPException: 404 if the page is absent. `static/` sits beside the
+            package rather than inside it, so a non-editable install ships
+            without it; an explicit 404 beats an opaque 500 from the file layer.
+    """
+    if not FRONTEND_PATH.is_file():
+        raise HTTPException(status_code=404, detail="The frontend page is not installed.")
+    # `FileResponse` sets an ETag but does not answer conditional requests, so without this
+    # a browser may heuristically cache the page and serve a stale one after an upgrade.
+    return FileResponse(FRONTEND_PATH, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/healthz")

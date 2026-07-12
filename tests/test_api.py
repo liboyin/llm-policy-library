@@ -3,6 +3,7 @@
 import logging
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -122,6 +123,36 @@ async def test_get_pipeline_returns_the_pipeline_lifespan_stored_on_app_state() 
         assert await testee.get_pipeline() is sentinel
     finally:
         del testee.app.state.pipeline
+
+
+def test_frontend_path_resolves_to_the_shipped_page() -> None:
+    """The page must be found from the package, so `uvicorn` serves it from any directory."""
+    assert testee.FRONTEND_PATH.is_absolute()
+    assert testee.FRONTEND_PATH.is_file()
+
+
+def test_frontend_serves_the_page(client: TestClient, tmp_path: Path) -> None:
+    """The root route must serve the page itself: it is how an end user reaches the system."""
+    page = tmp_path / "index.html"
+    page.write_text("<!DOCTYPE html><title>Policy Library</title>")
+
+    with patch.object(testee, "FRONTEND_PATH", page):
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+    assert response.text == "<!DOCTYPE html><title>Policy Library</title>"
+    # `FileResponse` answers no conditional request, so without this a browser may
+    # heuristically cache the page and serve a stale one after an upgrade.
+    assert response.headers["cache-control"] == "no-cache"
+
+
+def test_frontend_reports_404_when_the_page_is_absent(client: TestClient, tmp_path: Path) -> None:
+    """An uninstalled page must be an explicit 404, not an opaque 500 from the file layer."""
+    with patch.object(testee, "FRONTEND_PATH", tmp_path / "absent.html"):
+        response = client.get("/")
+
+    assert response.status_code == 404
 
 
 def test_healthz_reports_ok(client: TestClient) -> None:

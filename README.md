@@ -9,8 +9,8 @@ See [TASK.md](TASK.md) for the goals this project implements and
 [TODO.md](TODO.md) for the phased execution plan and the resolved design decisions.
 
 > **Status:** load-tested (Phase 6). Ingestion, the three agents, the orchestration pipeline, the
-> HTTP API, the CLI, the evaluation harness, and the load test are in place; the architecture doc
-> lands in Phase 7.
+> HTTP API, the browser frontend, the CLI, the evaluation harness, and the load test are in place;
+> the architecture doc lands in Phase 7.
 
 ## Project structure
 
@@ -27,8 +27,9 @@ See [TASK.md](TASK.md) for the goals this project implements and
 | [llm_policy_library/agents/response.py](llm_policy_library/agents/response.py) | Response Agent — writes the grounded answer, or the safe fallback |
 | [llm_policy_library/agents/judges.py](llm_policy_library/agents/judges.py) | LLM-judge agents for evaluation — faithfulness and answer relevancy |
 | [llm_policy_library/orchestrator.py](llm_policy_library/orchestrator.py) | The pipeline wiring the three agents together |
-| [llm_policy_library/api.py](llm_policy_library/api.py) | FastAPI service — `POST /query`, `GET /healthz` |
+| [llm_policy_library/api.py](llm_policy_library/api.py) | FastAPI service — `POST /query`, `GET /healthz`, `GET /` (the frontend) |
 | [llm_policy_library/cli.py](llm_policy_library/cli.py) | `python -m llm_policy_library.cli "question"` — same pipeline, pretty-printed |
+| [static/index.html](static/index.html) | The browser frontend — one dependency-free page served at `GET /` |
 | [llm_policy_library/evaluation.py](llm_policy_library/evaluation.py) | Evaluation harness: golden-set metrics, citation check, Markdown report |
 | [evaluation/](evaluation/) | The golden set (`golden_set.json`) and the runner (`run_eval.py`) |
 | [samples/](samples/) | Sample execution output: raw pipeline results, audit logs, and the evaluation report |
@@ -176,19 +177,31 @@ through the portal steps, the tier trade-offs, and where to find each endpoint a
 `.env` is gitignored and must never be committed. `.env` is resolved relative to the repo
 root, not the process's working directory, so both commands below work from anywhere.
 
-## Running the service and CLI
+## Running the service, the frontend, and the CLI
 
-Both wrap the same `PolicyPipeline` (`llm_policy_library.orchestrator`) — there is exactly
-one code path from a question to a grounded answer, whether it arrives over HTTP or the CLI.
+The service and the CLI both wrap the same `PolicyPipeline` (`llm_policy_library.orchestrator`),
+and the frontend is a client of the service — so there is exactly one code path from a question
+to a grounded answer, whether it arrives from the browser, over HTTP, or from the CLI.
 
 ```bash
-uvicorn llm_policy_library.api:app   # POST /query {"query": "..."}, GET /healthz
+uvicorn llm_policy_library.api:app   # GET / (frontend), POST /query, GET /healthz
 ```
 
 `POST /query` returns `{answer, citations, is_fallback, plan, retrieved, latency_ms}` and
 echoes the request's correlation ID as an `X-Correlation-ID` response header. A pipeline
 failure (a planner/response error, or an Azure outage) answers with `502` and a fixed safe
 message, never a stack trace; a missing or blank `query` answers with `422`.
+
+`GET /` serves [static/index.html](static/index.html) — open <http://127.0.0.1:8000> and ask a
+question in the browser. It is a plain page with inline CSS and JavaScript: no build step, no
+framework, no CDN, so it works offline and in an air-gapped deployment. It calls `POST /query`
+and shows the whole audit trail the API returns — the answer, the Planner's steps, and every
+retrieved control with its score, with the ones the answer cited marked — because the evidence
+behind an answer is the point of the system, not a debugging detail. Model output is written to
+the DOM as **text, never HTML** (`textContent`, never `innerHTML`): the answer is generated and
+can echo the user's own question, so an HTML sink there would make the query box and the corpus
+a script-injection path. `static/` sits beside the package rather than inside it, so an install
+that ships only `llm_policy_library` answers `GET /` with a `404`, and the API keeps working.
 
 ```bash
 python -m llm_policy_library.cli "What controls apply to API security?"

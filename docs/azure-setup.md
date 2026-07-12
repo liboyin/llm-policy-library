@@ -85,7 +85,7 @@ Create **two** deployments. The **deployment name** you type here is what goes i
 > `top_p`, or `seed`. This project therefore achieves determinism and no-hallucination
 > through **structured outputs**, a **pinned model version**, minimized
 > `reasoning_effort`, and **citation-enforced grounding + safe fallback** — not
-> temperature knobs. See [architecture.md](architecture.md) (Phase 7) for the full
+> temperature knobs. See [architecture.md](architecture.md) for the full
 > rationale. Set `reasoning_effort` low (`minimal` on gpt-5-mini, `none` on gpt-5.1)
 > to reduce both latency and output variance.
 
@@ -141,7 +141,8 @@ Resource → **Keys and Endpoint**:
 > search with semantic reranking, gated on `MIN_RERANKER_SCORE`. On **Free**, set it to
 > `false`: a vector-only search (the flag drops the keyword half), gated on
 > `MIN_VECTOR_SCORE` — because a hybrid search's fused score cannot gate the safe fallback.
-> See the README's "two search modes, two score scales" section. The 1,014-record demo
+> See the retrieval design in [architecture.md](architecture.md), and the measured score
+> bands in `llm_policy_library/agents/retrieval.py`'s docstring. The 1,014-record demo
 > catalog fits comfortably in the Free tier's 50 MB.
 
 6. **Review + create** → **Create**.

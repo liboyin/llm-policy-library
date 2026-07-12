@@ -5,12 +5,17 @@ retrieving from the NIST SP 800-53 Rev 5 control catalog indexed in Azure AI Sea
 planning a query with PydanticAI agents, and generating a grounded,
 citation-bearing answer with Azure OpenAI.
 
-See [TASK.md](TASK.md) for the goals this project implements and
-[TODO.md](TODO.md) for the phased execution plan and the resolved design decisions.
+- [TASK.md](TASK.md) — the goals this project implements.
+- [TODO.md](TODO.md) — the phased execution plan, the resolved design decisions
+  (D1–D7), and each phase's verified status.
+- [docs/architecture.md](docs/architecture.md) — system design, agent interaction flow,
+  determinism & grounding, security, scalability (the 5M-word design and the 50-user
+  SLA analysis), governance, and the zero-downtime reindex design.
 
-> **Status:** load-tested (Phase 6). Ingestion, the three agents, the orchestration pipeline, the
-> HTTP API, the browser frontend, the CLI, the evaluation harness, and the load test are in place;
-> the architecture doc lands in Phase 7.
+> **Status:** complete. Phases 0–7 are delivered; Phase 8 (alternative approaches) was
+> deliberately not executed. A demo deployment runs on Azure App Service at
+> <https://llm-policy-library.azurewebsites.net/> (until the assessment resources are
+> torn down).
 
 ## Project structure
 
@@ -22,146 +27,20 @@ See [TASK.md](TASK.md) for the goals this project implements and
 | [llm_policy_library/search_index.py](llm_policy_library/search_index.py) | Azure AI Search index schema (hybrid + semantic) |
 | [llm_policy_library/ingest.py](llm_policy_library/ingest.py) | `python -m llm_policy_library.ingest` — rebuilds the index |
 | [llm_policy_library/models.py](llm_policy_library/models.py) | The typed messages the agents exchange |
-| [llm_policy_library/agents/planner.py](llm_policy_library/agents/planner.py) | Planner Agent — decomposes a question into 1–3 searches |
-| [llm_policy_library/agents/retrieval.py](llm_policy_library/agents/retrieval.py) | Retrieval Agent — searches the index and applies the relevance floor |
-| [llm_policy_library/agents/response.py](llm_policy_library/agents/response.py) | Response Agent — writes the grounded answer, or the safe fallback |
-| [llm_policy_library/agents/judges.py](llm_policy_library/agents/judges.py) | LLM-judge agents for evaluation — faithfulness and answer relevancy |
-| [llm_policy_library/orchestrator.py](llm_policy_library/orchestrator.py) | The pipeline wiring the three agents together |
+| [llm_policy_library/agents/](llm_policy_library/agents/) | Planner, Retrieval, and Response agents, plus the two LLM judges |
+| [llm_policy_library/prompts.json](llm_policy_library/prompts.json) | The version-controlled prompt store ([prompts.py](llm_policy_library/prompts.py) loads it) |
+| [llm_policy_library/orchestrator.py](llm_policy_library/orchestrator.py) | `PolicyPipeline` — wires the three agents together |
 | [llm_policy_library/api.py](llm_policy_library/api.py) | FastAPI service — `POST /query`, `GET /healthz`, `GET /` (the frontend) |
 | [llm_policy_library/cli.py](llm_policy_library/cli.py) | `python -m llm_policy_library.cli "question"` — same pipeline, pretty-printed |
 | [static/index.html](static/index.html) | The browser frontend — one dependency-free page served at `GET /` |
 | [llm_policy_library/evaluation.py](llm_policy_library/evaluation.py) | Evaluation harness: golden-set metrics, citation check, Markdown report |
 | [evaluation/](evaluation/) | The golden set (`golden_set.json`) and the runner (`run_eval.py`) |
-| [samples/](samples/) | Sample execution output: raw pipeline results, audit logs, and the evaluation report |
+| [loadtest/](loadtest/) | Locust load test (`locustfile.py`), serial baseline, and the tested pass/fail logic (`checks.py`) |
+| [samples/](samples/) | Sample execution outputs: smoke test, evaluation report, load-test artifacts |
 | [tests/](tests/) | Unit tests; no test performs a live Azure call |
-| [docs/azure-setup.md](docs/azure-setup.md) | How to provision the Azure resources this project reads |
-| [.env.example](.env.example) | Template for the environment variables below |
-
-## Dataset and ingestion
-
-The corpus is the **NIST SP 800-53 Rev 5 control catalog**, taken from the official
-[OSCAL JSON](https://github.com/usnistgov/oscal-content) at a **pinned commit** so the
-corpus cannot drift under the index or the evaluation golden set. TASK.md suggests a NIST
-CSF dataset, but that one holds only 91 records against a 500-record minimum; the 800-53
-catalog yields **1,014** and maps cleanly onto the required title / description / category
-(see decision D1 in [TODO.md](TODO.md)).
-
-```bash
-python -m llm_policy_library.ingest   # fetch -> parse -> embed -> recreate index -> upload
-```
-
-Each record is one control or control enhancement: `id` (`ac-2.1`), `title`, `description`
-(the control statement), and `category` (the control family). Three parsing decisions are
-worth knowing:
-
-- **Withdrawn controls are excluded.** They are superseded and 180 of the 182 carry no
-  requirement text at all; citing one as if it applied would be a grounding error.
-- **Only the `statement` part becomes the description.** The sibling `guidance` and
-  SP 800-53A assessment parts are commentary, and would dilute the embedding of what the
-  control actually mandates.
-- **Parameter placeholders are rendered, not stripped.** `{{ insert: param, ... }}` becomes
-  `[Assignment: organization-defined frequency]` or `[Selection (one or more): a; b]`.
-  Labels are used verbatim rather than reconstructed into NIST's printed phrasing, so the
-  description never contains words its source does not.
-
-Ingestion is **idempotent**: it recreates the index, leaving exactly the controls in the
-pinned catalog. Everything that can fail on bad input — fetching, parsing, the 500-record
-floor, embedding, and the vector-width check — runs *before* the index is dropped, so such
-a failure leaves the previous index still serving queries. Azure AI Search reports its
-document count with a few seconds' lag, so a count taken the instant ingestion finishes may
-read low.
-
-The index stores the control ID twice. Azure AI Search restricts document key *values* to
-letters, digits, dash, underscore, and equal sign, so the enhancement ID `ac-2.1` cannot be
-a key; `key` holds the dot-free encoding `ac-2_1` while `id` keeps the exact ID that
-answers cite and the golden set labels.
-
-## The multi-agent pipeline
-
-Three agents run as a sequential pipeline over PydanticAI. Each edge is a validated
-Pydantic model, not a conversation, so a stage cannot quietly reinterpret what the previous
-one produced:
-
-```
-"What controls apply to API security?"
-        │
-        ▼  Planner Agent      chat model, PlannerOutput structured output
-   QueryPlan(original_query, steps=[PlanStep(search_query, purpose), ...])
-        │
-        ▼  Retrieval Agent    no chat model; embed -> search -> apply relevance floor
-   RetrievalOutcome(plan, results=[RetrievalResult, ...], documents=[RetrievedDocument, ...])
-        │
-        ▼  Response Agent     chat model, prose with inline [ac-2] citations
-   PipelineResult(plan, results, documents, response=GroundedResponse(...))
-```
-
-- **Planner** answers with a `PlannerOutput` JSON schema (the searches alone) rather than
-  prose that would have to be parsed, and the Planner assembles the `QueryPlan` from that
-  and the known question. It may plan 1–3 steps; the step count is enforced in code, and
-  `original_query` is set from the true input rather than echoed by the model.
-- **Retrieval** runs the steps concurrently, so a three-step plan costs roughly one step's
-  latency. Results below the relevance floor are dropped, and the survivors are
-  deduplicated across steps, keeping each control's best score.
-- **Response** may only cite controls it was given. An empty grounding set short-circuits to
-  the safe fallback *without calling a chat model*, and any citation in the answer that was
-  not retrieved is excluded from `citations` and logged as a grounding violation.
-
-The three stages are plain sequential awaits — a straight-line chain needs no workflow
-engine — and PydanticAI agents hold no per-run state, so one pipeline serves concurrent
-queries. The Azure clients are opened once per process by `open_pipeline`, never per
-request.
-
-### Retrieval: two search modes, two score scales
-
-`AZURE_SEARCH_SEMANTIC_RANKER` chooses how retrieval searches *and* which score it gates on.
-These cannot be chosen independently, because Azure AI Search's scores are not comparable.
-Measured against the live 1,014-control index over six on-topic and four off-topic questions:
-
-| Score | on-topic | off-topic | usable as a relevance floor? |
-|---|---|---|---|
-| `@search.rerankerScore` (semantic) | 2.00 – 3.26 | 0.54 – 1.44 | yes, cleanly |
-| `@search.score`, vector-only (rescaled cosine) | 0.635 – 0.776 | 0.517 – 0.576 | yes, narrowly |
-| `@search.score`, hybrid (RRF) | 0.028 – 0.032 | 0.024 – 0.032 | **no** |
-
-A hybrid query's `@search.score` is a **Reciprocal Rank Fusion** score, computed from each
-document's *rank* in the vector and BM25 lists rather than from how well it matches. Some
-document always ranks first, so "What is the capital of France?" scored 0.0323 — matching
-the best on-topic question. **No threshold on an RRF score can drive the safe fallback.**
-
-So the agent always gates on the score it ranked by:
-
-- **Ranker on** (Basic tier or above) — hybrid vector + BM25 search with semantic reranking;
-  gate on `@search.rerankerScore` ≥ `MIN_RERANKER_SCORE`.
-- **Ranker off** (Free tier) — `search_text` is dropped, making it a vector-only search, which
-  turns `@search.score` into a cosine similarity; gate on `@search.score` ≥ `MIN_VECTOR_SCORE`.
-
-The Free tier therefore gives up BM25 keyword matching. Measured against this corpus that
-costs little, because each document's embedded text is prefixed with its control ID, so
-`AC-2` still retrieves `ac-2` at rank one.
-
-## Sample output
-
-[samples/](samples/) holds a smoke test of three questions — two on-topic, one deliberately not:
-
-- `smoke_test.json` — the raw `PipelineResult` for each: plan, per-step hits with scores,
-  the deduplicated grounding set, and the answer with its citations.
-- `smoke_test.log` — the JSON audit trail those three queries produced, one object per line.
-
-"What is the capital of France?" retrieves nothing above the floor and returns the safe
-fallback without ever reaching a chat model.
-
-It also holds the evaluation output over the 15-query golden set (see below):
-
-- `evaluation_report.md` — the aggregate table and a per-query section (plan, retrieved
-  controls, both metric views, judge scores, citations, answer).
-- `evaluation_transcripts.json` — the same, machine-readable, for every query.
-
-In the committed run, answer quality is strong — faithfulness 5.0/5, answer relevancy 5.0/5,
-and **zero invented citations** across all 13 on-topic queries — and both out-of-domain queries
-returned the safe fallback. Retrieval scored ~0.62 recall on the base-family view (~0.46
-exact-ID) with NDCG@5 ~0.49; the gap between the views is the retriever surfacing specific
-control enhancements above the broad base controls the golden set labels. Because the pipeline
-is a reasoning model, re-running produces slightly different numbers.
+| [docs/](docs/) | [azure-setup.md](docs/azure-setup.md) (provisioning) and [architecture.md](docs/architecture.md) |
+| [.github/workflows/](.github/workflows/) | CI/CD — deploys `main` to Azure App Service |
+| [.env.example](.env.example) | Template for the environment variables |
 
 ## Setup
 
@@ -174,130 +53,168 @@ cp .env.example .env    # then fill in the values
 
 Provision the Azure resources first — [docs/azure-setup.md](docs/azure-setup.md) walks
 through the portal steps, the tier trade-offs, and where to find each endpoint and key.
-`.env` is gitignored and must never be committed. `.env` is resolved relative to the repo
-root, not the process's working directory, so both commands below work from anywhere.
+`.env` is gitignored and must never be committed; it is resolved relative to the repo
+root rather than the working directory, so launching the API or the CLI from elsewhere
+still finds it. (The eval and load-test commands take repo-relative paths — run those
+from the repo root.)
+
+## Dataset and ingestion
+
+The corpus is the **NIST SP 800-53 Rev 5 control catalog** — the official
+[OSCAL JSON](https://github.com/usnistgov/oscal-content) at a **pinned commit**, so the
+corpus cannot drift under the index or the evaluation golden set. It yields **1,014**
+records (one per control or control enhancement: `id`, `title`, `description`,
+`category`), against TASK.md's 500-record minimum (decision D1 in [TODO.md](TODO.md)).
+
+```bash
+python -m llm_policy_library.ingest   # fetch -> parse -> embed -> recreate index -> upload
+```
+
+Ingestion is **idempotent**, and everything that can fail on bad input runs *before* the
+old index is dropped, so a failure leaves the previous index serving. The parsing
+decisions (withdrawn controls excluded, statement-only descriptions, parameter
+placeholders rendered verbatim) and the `key`/`id` field split are documented in
+[dataset.py](llm_policy_library/dataset.py) and
+[search_index.py](llm_policy_library/search_index.py).
+
+## The multi-agent pipeline
+
+Three PydanticAI agents run as a sequential pipeline; every edge is a validated Pydantic
+message, so a stage cannot quietly reinterpret what the previous one produced:
+
+**Planner** (chat, structured output: 1–3 search steps) → **Retrieval** (no LLM: embed,
+search, apply the relevance floor, deduplicate) → **Response** (chat, prose with inline
+`[ac-2]` citations — or the safe fallback, without a chat call, when nothing relevant was
+retrieved).
+
+The full flow, the grounding guarantees, and the two-search-modes/two-score-scales design
+(why `AZURE_SEARCH_SEMANTIC_RANKER` selects both the search mode *and* the relevance
+floor) are in [docs/architecture.md](docs/architecture.md); the measured score bands
+behind the floors are in
+[agents/retrieval.py](llm_policy_library/agents/retrieval.py)'s docstring.
 
 ## Running the service, the frontend, and the CLI
 
-The service and the CLI both wrap the same `PolicyPipeline` (`llm_policy_library.orchestrator`),
-and the frontend is a client of the service — so there is exactly one code path from a question
-to a grounded answer, whether it arrives from the browser, over HTTP, or from the CLI.
+The service and the CLI both wrap the same `PolicyPipeline`, and the frontend is a client
+of the service — one code path from a question to a grounded answer.
 
 ```bash
 uvicorn llm_policy_library.api:app   # GET / (frontend), POST /query, GET /healthz
 ```
 
 `POST /query` returns `{answer, citations, is_fallback, plan, retrieved, latency_ms}` and
-echoes the request's correlation ID as an `X-Correlation-ID` response header. A pipeline
-failure (a planner/response error, or an Azure outage) answers with `502` and a fixed safe
-message, never a stack trace; a missing or blank `query` answers with `422`.
+echoes an `X-Correlation-ID` response header. A pipeline failure answers `502` with a
+fixed safe message, never a stack trace; a missing or blank `query` answers `422`.
 
-`GET /` serves [static/index.html](static/index.html) — open <http://127.0.0.1:8000> and ask a
-question in the browser. It is a plain page with inline CSS and JavaScript: no build step, no
-framework, no CDN, so it works offline and in an air-gapped deployment. It calls `POST /query`
-and shows the whole audit trail the API returns — the answer, the Planner's steps, and every
-retrieved control with its score, with the ones the answer cited marked — because the evidence
-behind an answer is the point of the system, not a debugging detail. Model output is written to
-the DOM as **text, never HTML** (`textContent`, never `innerHTML`): the answer is generated and
-can echo the user's own question, so an HTML sink there would make the query box and the corpus
-a script-injection path. `static/` sits beside the package rather than inside it, so an install
-that ships only `llm_policy_library` answers `GET /` with a `404`, and the API keeps working.
+`GET /` serves [static/index.html](static/index.html) — open <http://127.0.0.1:8000> and
+ask a question in the browser. It is a single page with inline CSS/JS (no build step, no
+CDN) that shows the whole audit trail the API returns: the answer, the plan, and every
+retrieved control with its score, cited ones marked. Model output reaches the DOM as
+**text, never HTML** (`textContent`), so neither the query nor the corpus can become a
+script-injection path.
 
 ```bash
 python -m llm_policy_library.cli "What controls apply to API security?"
 ```
 
-prints the plan, the retrieved controls with their scores, and the final answer with its
-citations. Its structured logs go to stderr, so stdout carries only the report.
+prints the plan, the retrieved controls with scores, and the cited answer. Its logs go to
+stderr so stdout carries only the report.
 
-## Running the evaluation
+Pushing to `main` deploys the service to **Azure App Service** via
+[.github/workflows/main_llm-policy-library.yml](.github/workflows/main_llm-policy-library.yml)
+(configuration arrives as App Service app settings instead of `.env`).
+
+## Evaluation
 
 ```bash
 python evaluation/run_eval.py   # runs the golden set through the live pipeline + judges
 ```
 
-The harness runs every query in [evaluation/golden_set.json](evaluation/golden_set.json)
-through the pipeline and scores four things: retrieval (recall plus graded NDCG@k, both
-computed directly from the hand-labeled qrels — deterministic math, no external evaluator),
-answer quality (faithfulness and answer relevancy, integer 1–5, from two small PydanticAI
-judge agents on the same chat deployment the pipeline uses), citation validity (every inline
-citation must have been retrieved), and the safe fallback on out-of-domain queries. It writes
-[samples/evaluation_report.md](samples/evaluation_report.md) and
-`samples/evaluation_transcripts.json`.
+The harness runs the 15-query hand-labeled golden set
+([evaluation/golden_set.json](evaluation/golden_set.json), including TASK.md's four
+queries) through the pipeline and scores:
 
-Recall is reported two ways. **Exact-ID** credits only a retrieved control whose ID matches
-a labelled one. **Base-family** also credits a retrieved *enhancement* whose base control was
-labelled — `ia-2.6` counts toward the `ia-2` need — because in NIST SP 800-53 an enhancement
-is a more specific form of its base control. The exact-ID column is a strict lower bound; the
-base-family column is the fairer measure for this hierarchical catalog, since the semantic
-retriever ranks specific enhancements above the broad base control. Recall gates answer
-quality (an answer can only be grounded in what was retrieved); NDCG@k — truncated at the
-pipeline's own `RETRIEVAL_TOP_K` and strictly exact-ID — covers ranking quality. Precision
-and F1 are deliberately not reported: at top-k 5 over a hierarchical catalog, precision
-penalizes retrieving related enhancements and is uninformative. The judge prompts live in the
-version-controlled prompt store ([prompts.json](llm_policy_library/prompts.json)); each judge
-call is retried with exponential backoff, and a judge that still fails records `None` for
-that metric (rendered as "—") instead of crashing the run.
+- **Retrieval** — recall and graded NDCG@5, computed directly from the qrels
+  (deterministic math, no external evaluator). Recall is reported **exact-ID** (strict)
+  and **base-family** (a retrieved enhancement credits its labelled base control — the
+  fairer measure for a hierarchical catalog). Precision/F1 are deliberately not reported:
+  at top-k 5 they penalize retrieving related enhancements and are uninformative.
+- **Answer quality** — faithfulness and answer relevancy (integer 1–5) from two PydanticAI
+  judge agents, prompts in the version-controlled store, retried with backoff, `None` on
+  persistent failure.
+- **Citation validity** — every inline citation must have been retrieved (hard check).
+- **Safe fallback** — the two out-of-domain queries must fall back.
+
+It writes [samples/evaluation_report.md](samples/evaluation_report.md) and
+`samples/evaluation_transcripts.json`. Committed run: **faithfulness 5.0/5, relevancy
+5.0/5, zero invented citations** across all 13 on-topic queries, 2/2 fallbacks; recall
+0.46 exact-ID / 0.62 base-family, NDCG@5 0.49. The pipeline is a reasoning model, so
+re-running shifts the numbers slightly. [samples/](samples/) also holds a three-query
+smoke test (`smoke_test.json` + its audit trail `smoke_test.log`).
+
+## Designed scale and load test
+
+The system is **designed for** a ~5M-word corpus and 50 concurrent users at
+p90 ≤ 15 s / p99 ≤ 30 s; the **demo** ingests the 1,014-control catalog and was
+load-tested at 10 users with an analytical extrapolation to 50 (decisions D2/D3).
+
+```bash
+uvicorn llm_policy_library.api:app --workers 4   # then, in another shell:
+locust -f loadtest/locustfile.py --headless -u 10 -r 2 --run-time 6m \
+    --host http://127.0.0.1:8000
+```
+
+The load mix is the evaluation golden set itself (on-topic : out-of-domain 3:1), so the
+queries whose answers were graded are the queries whose latency is measured. An HTTP 200
+is not enough to pass: an on-topic answer that falls back or cites nothing is a failure.
+
+Measured (6 min, 10 users, zero HTTP errors —
+[samples/loadtest_results.md](samples/loadtest_results.md) traces every number to a
+committed artifact):
+
+| | p50 | p90 | p99 | SLA |
+|---|---:|---:|---:|---|
+| On-topic `POST /query` | 7.4 s | **9.4 s** | **11.0 s** | met, with headroom |
+
+Extrapolated to 50 users: the binding constraint is **chat RPM, not TPM and not
+latency** — ≈547 RPM needed against a 150 RPM quota, so the deployment needs **≈600K TPM**
+(the quota grants 1 RPM per 1,000 TPM), and Azure AI Search needs replicas (start at 2).
+Whether the latency SLA still holds at 50 users is deliberately left open — the current
+quota caps any measurable run at ~14 users. The full quota math, the stage-level latency
+split, and the mitigation levers are in the memo and summarized in
+[docs/architecture.md](docs/architecture.md); the 5M-word index sizing (≈18K chunks,
+≈110 MB of vectors, ≈$0.14 to embed) is in the architecture doc's scalability section.
 
 ## Configuration
 
-All configuration comes from environment variables, read from the process environment or
-from `.env` (the process environment wins). [.env.example](.env.example) documents every
-variable; [config.py](llm_policy_library/config.py) validates them. A missing or malformed
-variable aborts startup with a message naming each variable to fix, rather than failing
-later inside an Azure SDK call.
+All configuration is environment variables, read from the process environment or `.env`
+(the process environment wins). [.env.example](.env.example) documents every variable;
+[config.py](llm_policy_library/config.py) validates them at startup and fails fast with
+a message naming each variable to fix. Three settings carry design weight:
 
-Three settings carry design weight:
-
-- `AZURE_SEARCH_SEMANTIC_RANKER` — semantic reranking needs Basic tier or above. Set it to
-  `false` on the Free tier, which switches retrieval to a vector-only search. It also
-  selects which relevance floor applies; see the two score scales above.
-- `MIN_RERANKER_SCORE` (default `1.8`, scale 0–4) and `MIN_VECTOR_SCORE` (default `0.60`,
-  a rescaled cosine) — the relevance floors. **Exactly one applies**, chosen by the flag
-  above. Each default sits between the measured on-topic and off-topic score bands, nearer
-  the on-topic band, because a compliance system should rather refuse than answer from a
-  control it half-matched. A floor of `0` can never trigger the fallback.
-- `LLM_REASONING_EFFORT` — every currently deployable Azure OpenAI chat model is a
-  reasoning model that rejects `temperature`, `top_p`, and `seed`. Determinism is
-  therefore enforced through grounding (structured outputs, a pinned model version,
-  citation checks, and a safe fallback) rather than sampling controls. See decision D7 in
-  [TODO.md](TODO.md). Note that reasoning models are not bit-exact reproducible: the plan's
-  *shape* is guaranteed, its wording is not.
+- `AZURE_SEARCH_SEMANTIC_RANKER` — `true` needs Basic tier or above (hybrid search +
+  semantic reranking, gated on `MIN_RERANKER_SCORE`); `false` (Free tier) switches to a
+  vector-only search gated on `MIN_VECTOR_SCORE`, because a hybrid query's fused RRF score
+  cannot gate relevance at any threshold.
+- `MIN_RERANKER_SCORE` (default `1.8`) / `MIN_VECTOR_SCORE` (default `0.60`) — the
+  relevance floors; exactly one applies. Each default sits between the measured on-topic
+  and off-topic score bands, nearer the on-topic band: a compliance system should rather
+  refuse than answer from a control it half-matched.
+- `LLM_REASONING_EFFORT` — deployable Azure OpenAI chat models reject
+  `temperature`/`top_p`/`seed`, so determinism is grounding-enforced instead (decision D7;
+  see [docs/architecture.md](docs/architecture.md)).
 
 ## Logging
 
-Every log line is a single JSON object written to stdout. Fields passed via the stdlib
-`extra=` keyword are merged into the payload, and the correlation ID of the enclosing
-request is attached automatically:
-
-```python
-import logging
-
-from llm_policy_library.logging_setup import configure_logging, correlation_context
-
-configure_logging(level="INFO")
-with correlation_context() as correlation_id:
-    logging.getLogger(__name__).info("query received", extra={"query": query})
-```
-
-The correlation ID lives in a `ContextVar`, so it survives `await` boundaries and stays
-isolated between concurrently served requests. The API also echoes it back as an
-`X-Correlation-ID` response header, so a caller reporting a problem can quote the ID that
-locates it in the log. Logs go to stdout everywhere except the CLI, which writes them to
-stderr so they don't interleave with the report it prints to stdout.
-
-Every query writes one line per hop — plan, each retrieval step, the answer with its
-citations, and the end-to-end latency — all sharing the request's correlation ID.
-`samples/smoke_test.log` is a real example.
-
-Each retrieval step logs both sides of the relevance floor, `kept` and `dropped`, with
-scores. A safe fallback is only auditable if the trail says what was rejected and by how
-far: for "What is the capital of France?" the best rejected control scored `1.222` against
-the `1.8` floor.
-
-The Azure SDK logs a full request/response header dump on every HTTP call, and `httpx` a
-line per request, both at INFO. They are pinned to WARNING so they cannot bury the audit
-trail; setting `LOG_LEVEL=DEBUG` restores them for troubleshooting.
+Every log line is one JSON object (stdout everywhere; stderr in the CLI). Each request
+writes one line per hop — the query, the plan, each retrieval step with both the `kept`
+**and** `dropped` documents and their scores, the answer with its citations and token
+counts, and the end-to-end latency — all sharing a correlation ID that the API echoes back
+as `X-Correlation-ID`. A safe fallback is thereby auditable: the trail shows what was
+rejected and by how far. Noisy third-party loggers (`azure`, `httpx`, and friends) are
+pinned to WARNING unless `LOG_LEVEL=DEBUG`. See
+[logging_setup.py](llm_policy_library/logging_setup.py) for the API;
+[samples/smoke_test.log](samples/smoke_test.log) is a real trail.
 
 ## Tests and static analysis
 

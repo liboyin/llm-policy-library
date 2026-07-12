@@ -13,6 +13,8 @@ authors = [
 dependencies = [
   # Major-capped: 12.x reworked the index/vector API this project builds against.
   "azure-search-documents>=12.0.0,<13",
+  # required by Azure App Services
+  "aiohttp",
   "fastapi",
   "httpx",
   "openai",

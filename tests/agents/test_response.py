@@ -8,6 +8,7 @@ import pytest
 from pydantic_ai import UnexpectedModelBehavior
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.usage import RunUsage
 
 import llm_policy_library.agents.response as testee
 from llm_policy_library.models import RetrievedDocument
@@ -33,17 +34,27 @@ def make_document(control_id: str, score: float = 2.2) -> RetrievedDocument:
     )
 
 
-def agent_answering(answer: str) -> MagicMock:
+def agent_answering(answer: str, input_tokens: int = 3500, output_tokens: int = 250) -> MagicMock:
     """Stub a Response Agent that replies with `answer`.
 
     Args:
         answer: The prose the model returns.
+        input_tokens: The prompt tokens the run billed.
+        output_tokens: The completion tokens the run billed.
 
     Returns:
         The stub agent.
     """
     agent = MagicMock()
-    agent.run = AsyncMock(return_value=MagicMock(output=answer))
+    # A real `RunUsage`, not a MagicMock attribute: `generate_response` logs these
+    # as the measured token cost, and a MagicMock would let a non-int reach the
+    # audit trail without any test noticing.
+    agent.run = AsyncMock(
+        return_value=MagicMock(
+            output=answer,
+            usage=RunUsage(input_tokens=input_tokens, output_tokens=output_tokens),
+        )
+    )
     return agent
 
 
@@ -208,3 +219,17 @@ async def test_generate_response_wraps_a_model_misbehavior_as_a_response_error()
 
     with pytest.raises(testee.ResponseError, match="failed to produce"):
         await testee.generate_response(agent, "q", [make_document("ac-2")])
+
+
+async def test_generate_response_logs_the_chat_tokens_the_run_billed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The Response Agent dominates the token bill, so a TPM budget is only real if it is logged."""
+    agent = agent_answering("See [ac-2].", input_tokens=3612, output_tokens=241)
+
+    with caplog.at_level(logging.INFO, logger=testee.__name__):
+        await testee.generate_response(agent, "q", [make_document("ac-2")])
+
+    record = next(record for record in caplog.records if record.message == "answer generated")
+    assert getattr(record, "input_tokens") == 3612
+    assert getattr(record, "output_tokens") == 241

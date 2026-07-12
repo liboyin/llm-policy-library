@@ -206,7 +206,9 @@ def dedupe_documents(results: Iterable[RetrievalResult]) -> list[RetrievedDocume
     return sorted(best.values(), key=lambda document: (-document.score, document.id))
 
 
-async def embed_query(client: AsyncAzureOpenAI, deployment: str, text: str) -> list[float]:
+async def embed_query(
+    client: AsyncAzureOpenAI, deployment: str, text: str
+) -> tuple[list[float], int]:
     """Embed one search query with the same model the index was built with.
 
     Args:
@@ -215,10 +217,13 @@ async def embed_query(client: AsyncAzureOpenAI, deployment: str, text: str) -> l
         text: The text to embed.
 
     Returns:
-        The embedding vector.
+        The embedding vector, and the tokens the embeddings deployment billed for
+        it. The count is returned rather than dropped because embeddings carry
+        their own TPM quota, separate from the chat deployment's, and a plan of
+        three steps spends it three times over in one request.
     """
     response = await client.embeddings.create(model=deployment, input=[text])
-    return response.data[0].embedding
+    return response.data[0].embedding, response.usage.prompt_tokens
 
 
 async def retrieve_step(
@@ -239,7 +244,7 @@ async def retrieve_step(
         The step's documents that cleared the relevance floor.
     """
     mode = scoring_mode(settings)
-    vector = await embed_query(
+    vector, embedding_tokens = await embed_query(
         openai_client, settings.azure_openai_embedding_deployment, step.search_query
     )
     pager = await search_client.search(
@@ -258,6 +263,10 @@ async def retrieve_step(
             "search_query": step.search_query,
             "semantic": mode.semantic,
             "threshold": mode.threshold,
+            # One line per step, so summing this key across a correlation ID gives
+            # the request's embeddings cost. It is billed against a different
+            # quota than the chat tokens the Planner and Response Agent log.
+            "embedding_tokens": embedding_tokens,
             "kept": [{"id": document.id, "score": document.score} for document in documents],
             "dropped": [
                 {"id": row["id"], "score": row.get(mode.score_field)}

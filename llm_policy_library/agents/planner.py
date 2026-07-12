@@ -144,6 +144,12 @@ async def plan_query(agent: PlannerAgent, query: str) -> QueryPlan:
             "query": query,
             "planned_steps": len(planned.steps),
             "kept_steps": len(plan.steps),
+            # The chat tokens this stage really spent. Capacity planning needs
+            # tokens per request measured, not estimated: the Azure OpenAI TPM
+            # quota is what a concurrent workload exhausts first, and the audit
+            # trail is the only place the real number exists.
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
             # Both fields of each kept step: the query drives retrieval, and the
             # purpose is the model's stated reason for it — the only record of
             # *why* a search ran, which `PlanStep.purpose` exists to preserve.

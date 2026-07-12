@@ -8,9 +8,9 @@ citation-bearing answer with Azure OpenAI.
 See [TASK.md](TASK.md) for the goals this project implements and
 [TODO.md](TODO.md) for the phased execution plan and the resolved design decisions.
 
-> **Status:** evaluated (Phase 5). Ingestion, the three agents, the orchestration pipeline, the
-> HTTP API, the CLI, and the evaluation harness are in place; the load test and the architecture
-> doc land in later phases.
+> **Status:** load-tested (Phase 6). Ingestion, the three agents, the orchestration pipeline, the
+> HTTP API, the CLI, the evaluation harness, and the load test are in place; the architecture doc
+> lands in Phase 7.
 
 ## Project structure
 

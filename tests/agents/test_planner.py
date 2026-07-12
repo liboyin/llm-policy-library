@@ -8,6 +8,7 @@ import pytest
 from pydantic_ai import NativeOutput, UnexpectedModelBehavior
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.usage import RunUsage
 
 import llm_policy_library.agents.planner as testee
 from llm_policy_library.models import PlannerOutput, PlanStep
@@ -26,11 +27,13 @@ def make_step(search_query: str) -> PlanStep:
     return PlanStep(search_query=search_query, purpose=f"find {search_query}")
 
 
-def planner_returning(value: Any) -> MagicMock:
+def planner_returning(value: Any, input_tokens: int = 800, output_tokens: int = 50) -> MagicMock:
     """Stub a Planner Agent whose structured output is `value`.
 
     Args:
         value: What `AgentRunResult.output` holds, or an exception `run` raises.
+        input_tokens: The prompt tokens the run billed.
+        output_tokens: The completion tokens the run billed.
 
     Returns:
         The stub agent.
@@ -39,7 +42,15 @@ def planner_returning(value: Any) -> MagicMock:
     if isinstance(value, Exception):
         agent.run = AsyncMock(side_effect=value)
     else:
-        agent.run = AsyncMock(return_value=MagicMock(output=value))
+        # A real `RunUsage`, not a MagicMock attribute: `plan_query` logs these
+        # as the measured token cost, and a MagicMock would let a non-int reach
+        # the audit trail without any test noticing.
+        agent.run = AsyncMock(
+            return_value=MagicMock(
+                output=value,
+                usage=RunUsage(input_tokens=input_tokens, output_tokens=output_tokens),
+            )
+        )
     return agent
 
 
@@ -175,3 +186,19 @@ async def test_plan_query_warns_when_the_model_exceeds_the_step_limit(
         await testee.plan_query(agent, "q")
 
     assert any(record.levelno == logging.WARNING for record in caplog.records)
+
+
+async def test_plan_query_logs_the_chat_tokens_the_run_billed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Capacity planning needs tokens per request measured, and this is where they are recorded."""
+    agent = planner_returning(
+        PlannerOutput(steps=[make_step("access control")]), input_tokens=812, output_tokens=44
+    )
+
+    with caplog.at_level(logging.INFO, logger=testee.__name__):
+        await testee.plan_query(agent, "q")
+
+    record = next(record for record in caplog.records if record.message == "query planned")
+    assert getattr(record, "input_tokens") == 812
+    assert getattr(record, "output_tokens") == 44

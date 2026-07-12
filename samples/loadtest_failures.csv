@@ -1,0 +1,2 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+POST,/query [out-of-domain],"CatchResponseError(""fallback did not fire for out-of-domain query 'What is the capital of France?'"")",2,2026-07-12T13:37:26Z,2026-07-12T13:39:32Z

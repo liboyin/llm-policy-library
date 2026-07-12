@@ -162,6 +162,15 @@ async def generate_response(
         )
     logger.info(
         "answer generated",
-        extra={"query": query, "citations": grounded, "answer_chars": len(answer)},
+        extra={
+            "query": query,
+            "citations": grounded,
+            "answer_chars": len(answer),
+            # The same keys the Planner logs: summing them across one correlation
+            # ID gives the chat tokens a request really cost, which is what the
+            # chat deployment's TPM quota is spent against.
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        },
     )
     return GroundedResponse(answer=answer, citations=grounded, is_fallback=False)

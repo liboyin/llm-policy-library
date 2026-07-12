@@ -24,6 +24,21 @@ SETTINGS_ENV = {
 }
 
 
+def embedding_response(vector: list[float], prompt_tokens: int = 7) -> MagicMock:
+    """Stub one Azure OpenAI embeddings response, carrying the tokens it billed.
+
+    Args:
+        vector: The embedding the API returns.
+        prompt_tokens: The tokens the deployment billed for it.
+
+    Returns:
+        The stub response.
+    """
+    return MagicMock(
+        data=[MagicMock(embedding=vector)], usage=MagicMock(prompt_tokens=prompt_tokens)
+    )
+
+
 def make_settings(**overrides: Any) -> Settings:
     """Build a Settings object from literal values, bypassing the environment.
 
@@ -281,12 +296,13 @@ async def test_embed_query_uses_the_configured_embedding_deployment() -> None:
     """A query vector only matches the index if it comes from the model that built it."""
     client = MagicMock()
     client.embeddings.create = AsyncMock(
-        return_value=MagicMock(data=[MagicMock(embedding=[0.5, 0.25])])
+        return_value=embedding_response([0.5, 0.25])
     )
 
-    vector = await testee.embed_query(client, "text-embedding-3-small", "access control")
+    vector, tokens = await testee.embed_query(client, "text-embedding-3-small", "access control")
 
     assert vector == [0.5, 0.25]
+    assert tokens == 7
     client.embeddings.create.assert_awaited_once_with(
         model="text-embedding-3-small", input=["access control"]
     )
@@ -297,7 +313,7 @@ async def test_retrieve_step_embeds_the_step_query_not_the_users_question() -> N
     settings = make_settings(azure_search_semantic_ranker=True)
     openai_client = MagicMock()
     openai_client.embeddings.create = AsyncMock(
-        return_value=MagicMock(data=[MagicMock(embedding=[0.1])])
+        return_value=embedding_response([0.1])
     )
     search_client = MagicMock()
     search_client.search = AsyncMock(
@@ -320,7 +336,7 @@ async def test_retrieve_step_applies_the_floor_of_the_configured_mode() -> None:
     settings = make_settings(azure_search_semantic_ranker=False, min_vector_score=0.6)
     openai_client = MagicMock()
     openai_client.embeddings.create = AsyncMock(
-        return_value=MagicMock(data=[MagicMock(embedding=[0.1])])
+        return_value=embedding_response([0.1])
     )
     search_client = MagicMock()
     search_client.search = AsyncMock(
@@ -340,7 +356,7 @@ async def test_retrieve_step_logs_the_rejected_documents_and_their_scores(
     settings = make_settings(azure_search_semantic_ranker=True, min_reranker_score=1.8)
     openai_client = MagicMock()
     openai_client.embeddings.create = AsyncMock(
-        return_value=MagicMock(data=[MagicMock(embedding=[0.1])])
+        return_value=embedding_response([0.1])
     )
     search_client = MagicMock()
     search_client.search = AsyncMock(
@@ -359,12 +375,33 @@ async def test_retrieve_step_logs_the_rejected_documents_and_their_scores(
     assert getattr(record, "threshold") == 1.8
 
 
+async def test_retrieve_step_logs_the_tokens_the_embeddings_deployment_billed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Embeddings spend a quota of their own, so capacity planning needs the count per step."""
+    settings = make_settings(azure_search_semantic_ranker=True)
+    openai_client = MagicMock()
+    openai_client.embeddings.create = AsyncMock(return_value=embedding_response([0.1], 13))
+    search_client = MagicMock()
+    search_client.search = AsyncMock(
+        return_value=async_pager([search_row("ac-2", rerankerScore=2.2)])
+    )
+
+    with caplog.at_level(logging.INFO, logger=testee.__name__):
+        await testee.retrieve_step(
+            search_client, openai_client, settings, PlanStep(search_query="q", purpose="p")
+        )
+
+    record = next(record for record in caplog.records if record.message == "step retrieved")
+    assert getattr(record, "embedding_tokens") == 13
+
+
 async def test_retrieve_plan_runs_every_step_and_preserves_plan_order() -> None:
     """Steps run concurrently, but the audit trail must read in the order the plan states."""
     settings = make_settings(azure_search_semantic_ranker=True)
     openai_client = MagicMock()
     openai_client.embeddings.create = AsyncMock(
-        return_value=MagicMock(data=[MagicMock(embedding=[0.1])])
+        return_value=embedding_response([0.1])
     )
     search_client = MagicMock()
     search_client.search = AsyncMock(

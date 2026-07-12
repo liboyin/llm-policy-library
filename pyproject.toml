@@ -64,6 +64,9 @@ warn_unused_ignores = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# `loadtest` is a package but not an installed one, so the repo root must be
+# importable for its tests to `import loadtest.locustfile`.
+pythonpath = ["."]
 addopts = "--cov=llm_policy_library --cov-report=term-missing --cov-fail-under=80"
 # The agents and the pipeline are async throughout; `auto` runs their tests
 # without a marker on every one of them.

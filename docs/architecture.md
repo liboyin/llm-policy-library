@@ -45,10 +45,46 @@ the previous one produced, and the chain of messages **is** the audit record:
    is always the same score the mode ranked by (`MIN_RERANKER_SCORE` / `MIN_VECTOR_SCORE`;
    the measured score bands are in `agents/retrieval.py`'s docstring) — and survivors are
    deduplicated into one grounding set.
+
+   `RETRIEVAL_TOP_K` (default 5) is TASK.md's top-3–5 window, and it applies **per search
+   step**, not per question. A multi-step plan therefore grounds in more than five
+   controls: across the committed evaluation's 13 on-topic queries the merged set — after
+   the relevance floor and deduplication — ran from 5 controls (single-step plans) to 14
+   (a three-step plan), and 9 of the 13 exceeded 5. That is decomposition working as
+   intended rather than a widened retrieval window: each search returns its own top 5, and
+   a question spanning access control *and* logging legitimately needs both families. The
+   per-step window is what bounds cost and latency; the union is what the answer is
+   grounded in, and every control in it is cited or discarded on the evidence of the
+   audit trail.
 3. `RetrievalOutcome` → **Response Agent** → `PipelineResult`. If the grounding set is
    empty, the fixed safe-fallback message is returned **without calling a chat model**.
    Otherwise a chat call answers strictly from the supplied controls with inline `[ac-2]`
    citations, and every citation is checked against the retrieved IDs after the call.
+
+### Why not the Microsoft Agent Framework
+
+TASK.md names the Microsoft Agent Framework, and the system was built on it through Phase
+3. Three things drove the migration to PydanticAI in Phase 5.5, in ascending order of
+weight:
+
+- **Dependency conflict.** `agent-framework`'s pins conflict with `azure-search-documents`,
+  which the retrieval path requires; `pydantic-ai-slim[openai]` resolves cleanly against it.
+- **Its `Workflow` holds per-run state.** A second *concurrent* run raises
+  `WorkflowException("Workflow is already running")`, so a single long-lived workflow would
+  have failed every overlapping request under the API and the load test. It was workable —
+  the fix was to build a fresh workflow per query — but it meant paying for orchestration
+  machinery and then working around it.
+- **The machinery bought nothing here.** The pipeline is a straight-line chain of three
+  stages, which PydanticAI expresses as three sequential `await`s over stateless agents
+  (`orchestrator.PolicyPipeline`), with model-side JSON-schema enforcement on the Planner's
+  output. `Workflow`/`Executor` is the right tool for branching, fan-out, or shared
+  conversational state; this pipeline has none of the three.
+
+What TASK.md actually specifies of the agent layer is unchanged: a Planner, a Retrieval,
+and a Response agent, communicating through structured data under clear orchestration. Only
+the library beneath that contract differs — and the contract is *more* strictly enforced
+for it, since every edge is now a validated Pydantic message rather than a framework
+message envelope.
 
 ## Determinism & grounding
 

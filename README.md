@@ -87,6 +87,18 @@ search, apply the relevance floor, deduplicate) → **Response** (chat, prose wi
 `[ac-2]` citations — or the safe fallback, without a chat call, when nothing relevant was
 retrieved).
 
+`RETRIEVAL_TOP_K` (default 5) is TASK.md's top-3–5 window and applies **per search step**,
+so a multi-step plan grounds the answer in more than five controls — 5 to 14 across the
+committed evaluation's on-topic queries. Each search returns its own top 5, and a question
+spanning access control *and* logging needs both families; see
+[docs/architecture.md](docs/architecture.md).
+
+TASK.md names the Microsoft Agent Framework, which the project used through Phase 3 and
+migrated off in Phase 5.5 — its pins conflict with `azure-search-documents`, its `Workflow`
+holds per-run state that breaks on concurrent requests, and a straight-line three-stage
+chain needs no workflow engine. The agent contract TASK.md specifies is unchanged; the
+reasoning is in [docs/architecture.md](docs/architecture.md).
+
 The full flow, the grounding guarantees, and the two-search-modes/two-score-scales design
 (why `AZURE_SEARCH_SEMANTIC_RANKER` selects both the search mode *and* the relevance
 floor) are in [docs/architecture.md](docs/architecture.md); the measured score bands

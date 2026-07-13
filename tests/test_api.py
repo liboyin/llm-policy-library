@@ -1,5 +1,6 @@
 """Unit tests for `llm_policy_library.api`."""
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
@@ -19,6 +20,7 @@ from llm_policy_library.models import (
     RetrievalResult,
     RetrievedDocument,
 )
+from llm_policy_library.rate_limit import RateLimiter
 
 
 def make_document(control_id: str = "ac-2", score: float = 2.2) -> RetrievedDocument:
@@ -77,6 +79,14 @@ def pipeline() -> Iterator[MagicMock]:
     mock = MagicMock()
     mock.answer_query = AsyncMock()
     testee.app.dependency_overrides[testee.get_pipeline] = lambda: mock
+    # The rate limiter is off unless a test asks for it: every other test is
+    # about the pipeline, and a budget silently throttling them would make the
+    # suite's failures depend on how many requests a test happened to send.
+    # One instance, not one per call — an override runs per request, so building
+    # a limiter inside the lambda would hand every request a fresh budget.
+    disabled = RateLimiter(per_client_per_minute=0, global_per_minute=0)
+    testee.app.dependency_overrides[testee.get_rate_limiter] = lambda: disabled
+    testee.app.dependency_overrides[testee.get_request_timeout] = lambda: 60.0
     yield mock
     testee.app.dependency_overrides.clear()
 
@@ -96,7 +106,13 @@ def client(pipeline: MagicMock) -> TestClient:
 
 async def test_lifespan_opens_the_pipeline_once_and_exposes_it_on_app_state() -> None:
     """Settings and Azure clients must be set up once at startup, never per request."""
-    settings = MagicMock()
+    # Values distinct from every default, so the assertions below fail if the
+    # limiter is built from anything other than the settings that were loaded.
+    settings = MagicMock(
+        rate_limit_per_ip_per_minute=7,
+        rate_limit_global_per_minute=21,
+        request_timeout_seconds=12.5,
+    )
     fake_pipeline = MagicMock()
 
     @asynccontextmanager
@@ -110,6 +126,15 @@ async def test_lifespan_opens_the_pipeline_once_and_exposes_it_on_app_state() ->
     ):
         async with testee.lifespan(testee.app):
             assert testee.app.state.pipeline is fake_pipeline
+            # One limiter for the process, holding the buckets every request of
+            # this worker is counted against — and built from the configured
+            # budgets, not from hardcoded ones. Asserting only its type would
+            # pass even if `lifespan` ignored the settings entirely.
+            limiter = testee.app.state.rate_limiter
+            assert isinstance(limiter, RateLimiter)
+            assert limiter._client_capacity == 7
+            assert limiter._global_capacity == 21
+            assert testee.app.state.request_timeout_seconds == 12.5
 
     load_settings.assert_called_once_with()
     configure_logging.assert_called_once_with(settings.log_level)
@@ -123,6 +148,59 @@ async def test_get_pipeline_returns_the_pipeline_lifespan_stored_on_app_state() 
         assert await testee.get_pipeline() is sentinel
     finally:
         del testee.app.state.pipeline
+
+
+async def test_get_rate_limiter_returns_the_limiter_lifespan_stored_on_app_state() -> None:
+    """The budget must be the process-wide one; a per-request limiter is no budget at all."""
+    sentinel = MagicMock()
+    testee.app.state.rate_limiter = sentinel
+    try:
+        assert await testee.get_rate_limiter() is sentinel
+    finally:
+        del testee.app.state.rate_limiter
+
+
+async def test_get_request_timeout_returns_the_configured_timeout() -> None:
+    """The wait must come from configuration, so it can be tuned without a code change."""
+    testee.app.state.request_timeout_seconds = 12.5
+    try:
+        assert await testee.get_request_timeout() == 12.5
+    finally:
+        del testee.app.state.request_timeout_seconds
+
+
+def test_enforce_rate_limit_throttles_a_caller_over_its_budget(
+    client: TestClient, pipeline: MagicMock
+) -> None:
+    """The endpoint is public and every call spends money, so an over-budget caller must be refused."""
+    pipeline.answer_query.return_value = make_result()
+    limiter = RateLimiter(per_client_per_minute=1, global_per_minute=0)
+    testee.app.dependency_overrides[testee.get_rate_limiter] = lambda: limiter
+    body = {"query": "What controls apply to API security?"}
+
+    first = client.post("/query", json=body)
+    second = client.post("/query", json=body)
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.json() == {"detail": testee.RATE_LIMITED_MESSAGE}
+    # The whole point: the refused request never reached a model, so it cost nothing.
+    pipeline.answer_query.assert_awaited_once()
+
+
+def test_enforce_rate_limit_tells_a_throttled_caller_when_to_come_back(
+    client: TestClient, pipeline: MagicMock
+) -> None:
+    """Without `Retry-After` a well-behaved client can only guess, and guessing means retrying too early."""
+    pipeline.answer_query.return_value = make_result()
+    limiter = RateLimiter(per_client_per_minute=1, global_per_minute=0)
+    testee.app.dependency_overrides[testee.get_rate_limiter] = lambda: limiter
+    body = {"query": "What controls apply to API security?"}
+
+    client.post("/query", json=body)
+    throttled = client.post("/query", json=body)
+
+    assert int(throttled.headers["Retry-After"]) > 0
 
 
 def test_frontend_path_resolves_to_the_shipped_page() -> None:
@@ -207,6 +285,35 @@ def test_query_returns_the_safe_fallback_as_a_200_not_an_error(
     assert body["retrieved"] == []
 
 
+def test_query_maps_a_stuck_pipeline_to_504(client: TestClient, pipeline: MagicMock) -> None:
+    """A hung Azure call must not hold a worker open until the client gives up; the server quits first."""
+
+    async def never_finishes(_query: str) -> PipelineResult:
+        await asyncio.sleep(30)
+        raise AssertionError("the timeout should have fired long before this")
+
+    pipeline.answer_query.side_effect = never_finishes
+    testee.app.dependency_overrides[testee.get_request_timeout] = lambda: 0.01
+
+    response = client.post("/query", json={"query": "What controls apply to API security?"})
+
+    assert response.status_code == 504
+    assert response.json() == {"detail": testee.SAFE_TIMEOUT_MESSAGE}
+    assert response.headers["X-Correlation-ID"], "a timed-out request must stay traceable too"
+
+
+def test_query_maps_a_timeout_from_inside_the_pipeline_to_502_not_504(
+    client: TestClient, pipeline: MagicMock
+) -> None:
+    """An SDK read timeout is an upstream failure, not our deadline: calling it 504 would send an auditor after the wrong bug."""
+    pipeline.answer_query.side_effect = TimeoutError("azure read timed out")
+
+    response = client.post("/query", json={"query": "What controls apply to API security?"})
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": testee.SAFE_UPSTREAM_ERROR_MESSAGE}
+
+
 def test_query_maps_an_upstream_failure_to_502_without_leaking_its_detail(
     client: TestClient, pipeline: MagicMock
 ) -> None:
@@ -237,6 +344,27 @@ def test_query_rejects_a_whitespace_only_query_with_422(
 
     assert response.status_code == 422
     pipeline.answer_query.assert_not_awaited()
+
+
+def test_query_rejects_an_over_long_query_with_422(
+    client: TestClient, pipeline: MagicMock
+) -> None:
+    """A policy question is a sentence; a megabyte of text must be refused before it is embedded and billed."""
+    response = client.post("/query", json={"query": "x" * (testee.MAX_QUERY_LENGTH + 1)})
+
+    assert response.status_code == 422
+    pipeline.answer_query.assert_not_awaited()
+
+
+def test_query_accepts_a_query_at_the_length_limit(
+    client: TestClient, pipeline: MagicMock
+) -> None:
+    """The cap must sit above any real question, so it never refuses a legitimate one."""
+    pipeline.answer_query.return_value = make_result()
+
+    response = client.post("/query", json={"query": "x" * testee.MAX_QUERY_LENGTH})
+
+    assert response.status_code == 200
 
 
 def test_query_logs_the_incoming_request(

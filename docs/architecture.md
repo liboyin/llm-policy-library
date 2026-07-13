@@ -129,6 +129,63 @@ access disabled on both back ends — the model and the index then only answer f
 the VNet. Data residency is a deployment-type choice (Regional vs Global Standard; see
 [azure-setup.md](azure-setup.md)).
 
+**Inbound exposure: the endpoint is open by design, so the budget is the control.**
+`POST /query` is deliberately unauthenticated — the demo is meant to be opened and used —
+which means an anonymous caller can spend the owner's Azure OpenAI quota, roughly two chat
+calls per request against a 150 RPM deployment. Authentication is the wrong lever for a
+public demo; a request budget is the right one, so the API meters `/query` (and only
+`/query` — throttling the page or the health probe would protect nothing and break the
+platform's liveness checks) with two token buckets, in
+[rate_limit.py](../llm_policy_library/rate_limit.py):
+
+- **Per caller** (`RATE_LIMIT_PER_IP_PER_MINUTE`, default 10/min) bounds any single abuser
+  and keeps one caller from starving the rest. A query takes ~7 s, so a person sustains at
+  most ~8/min; 10 leaves a human room to think and stops a script cold.
+- **Global, per process** (`RATE_LIMIT_GLOBAL_PER_MINUTE`, default 30/min) bounds the case
+  the per-caller budget cannot — many distinct callers each individually under their limit.
+  This is the budget that actually caps the bill.
+
+Both numbers are **sustained rates, not window ceilings**. A token bucket holds a full
+bucketful in reserve, so an idle process admits its burst *and then* earns another minute's
+worth: the worst case in any 60 s window is **2×** the configured rate. The burst is
+deliberate — it is what lets someone click three example questions in a row without being
+punished — so the defaults are sized against 2×, not 1×: 30/min sustained is 60 req/min
+worst-case ≈ 120 chat calls, comfortably inside the 150 RPM quota that ~75 req/min would
+exhaust. (A test pins this 2×, so the quota reasoning cannot drift away from the code.)
+
+A rejected request is refused *before* the pipeline runs, so it reaches no model and costs
+nothing, and it carries `Retry-After` so a well-behaved client backs off correctly. The
+caller is identified by `X-Client-IP`, which the App Service front end sets and **overwrites**
+on every request; `X-Forwarded-For` is deliberately not trusted, because App Service appends
+to whatever the client sent, making its leftmost entry attacker-controlled — a limiter keyed
+on it could be bypassed by rotating a header. Two companion limits bound per-request cost
+rather than request count: a 2,000-character cap on the question (a megabyte of text would
+otherwise be embedded and sent to a chat model at the owner's expense) and a
+`REQUEST_TIMEOUT_SECONDS` budget on the pipeline, after which the request is abandoned with
+a 504 rather than holding a worker open.
+
+Residual risks, stated plainly rather than papered over:
+
+- **The buckets are per process, and the defaults assume exactly one worker.** There is no
+  headroom for a second: the worst case already spends ~120 of the deployment's 150 RPM, so
+  *N* workers multiply the ceiling by *N* and overrun the quota. Run one worker, or divide
+  the budgets by the worker count. A shared counter (Redis) is what a genuinely
+  multi-instance deployment would need, and is deliberately not built for a demo.
+- **"Inside quota" is a per-minute statement, and Azure enforces RPM over sub-minute
+  windows.** The deliberate burst can put dozens of near-simultaneous planner calls on the
+  wire in a few seconds, which can still draw an upstream 429 — surfacing to the client as a
+  502 — even while the *spend* stays bounded. Bounding cost is what this mechanism is for;
+  smoothing traffic is not.
+- **A caller off App Service can forge `X-Client-IP`** and mint fresh per-client budgets,
+  because the header is trusted wherever it appears. On the deployed service the front end
+  overwrites it, so this is not exploitable there; the global budget bounds the spend
+  regardless. Any host without an overwriting front end must strip the header at its edge.
+
+A distributed flood large enough to exhaust the global budget degrades the demo into 429s
+rather than an unbounded bill, which is the intended failure direction. Azure Front Door's
+WAF (per-IP rate limiting at the edge) is the platform-level hardening path if the endpoint
+ever needs to survive deliberate attack rather than merely bound its cost.
+
 **Prompt-injection surface.** Two inputs reach a chat model: the user's question and the
 retrieved control text. The corpus is trusted today (official NIST content at a pinned
 commit), but the design assumes neither input is safe: the Planner emits only a constrained

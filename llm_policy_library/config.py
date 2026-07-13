@@ -72,6 +72,12 @@ class Settings(BaseSettings):
         llm_reasoning_effort: Reasoning effort for the chat model. Deployable
             Azure OpenAI chat models reject `temperature`/`top_p`/`seed`, so
             grounding and low reasoning effort stand in for sampling controls.
+        rate_limit_per_ip_per_minute: Requests one caller may make per minute
+            against `POST /query`; `0` disables the per-caller budget.
+        rate_limit_global_per_minute: Requests one process may serve per minute
+            against `POST /query`; `0` disables the global budget.
+        request_timeout_seconds: How long `POST /query` waits for the pipeline
+            before answering 504.
         log_level: Root log level.
     """
 
@@ -117,6 +123,33 @@ class Settings(BaseSettings):
     min_vector_score: float = Field(default=0.60, ge=0.0, le=1.0)
 
     llm_reasoning_effort: ReasoningEffort = "minimal"
+
+    # The service is public and unauthenticated, so these are what bound the
+    # Azure OpenAI bill. `0` disables a budget — which the load test needs, since
+    # it drives ~63 requests/minute from one address and would otherwise measure
+    # the rate limiter rather than the pipeline.
+    #
+    # These are *sustained* rates. A token bucket holds a full bucketful in
+    # reserve, so the worst case in any 60s window is the burst plus a minute's
+    # refill — **twice** the number below (`rate_limit.take`). Both defaults are
+    # therefore sized against 2x, not 1x.
+    #
+    # Per caller: a query takes ~7s, so a human sustains at most ~8/minute. 10
+    # leaves a person room to think, and the burst lets them click a few example
+    # questions in a row without being punished for it.
+    #
+    # Global: the chat deployment's quota is 150 RPM and a request spends ~2 chat
+    # calls, so ~75 requests/minute exhausts it (`samples/loadtest_results.md`).
+    # At 30 sustained, the 2x worst case is 60 requests/minute — ~120 chat calls,
+    # comfortably inside the quota — while still serving far more traffic than a
+    # demo of this thing will ever see.
+    rate_limit_per_ip_per_minute: int = Field(default=10, ge=0)
+    rate_limit_global_per_minute: int = Field(default=30, ge=0)
+
+    # Well above the measured p99 (~11s) and the p99<=30s SLA, so it fires only on
+    # a genuinely stuck call — and below the frontend's own 120s abort, so the
+    # server gives up first and says why instead of the page timing out blind.
+    request_timeout_seconds: float = Field(default=60.0, gt=0.0)
 
     log_level: LogLevel = "INFO"
 

@@ -31,6 +31,7 @@ citation-bearing answer with Azure OpenAI.
 | [llm_policy_library/prompts.json](llm_policy_library/prompts.json) | The version-controlled prompt store ([prompts.py](llm_policy_library/prompts.py) loads it) |
 | [llm_policy_library/orchestrator.py](llm_policy_library/orchestrator.py) | `PolicyPipeline` — wires the three agents together |
 | [llm_policy_library/api.py](llm_policy_library/api.py) | FastAPI service — `POST /query`, `GET /healthz`, `GET /` (the frontend) |
+| [llm_policy_library/rate_limit.py](llm_policy_library/rate_limit.py) | Token-bucket request budgets — what bounds the bill on a public, unauthenticated endpoint |
 | [llm_policy_library/cli.py](llm_policy_library/cli.py) | `python -m llm_policy_library.cli "question"` — same pipeline, pretty-printed |
 | [static/index.html](static/index.html) | The browser frontend — one dependency-free page served at `GET /` |
 | [llm_policy_library/evaluation.py](llm_policy_library/evaluation.py) | Evaluation harness: golden-set metrics, citation check, Markdown report |
@@ -115,8 +116,16 @@ uvicorn llm_policy_library.api:app   # GET / (frontend), POST /query, GET /healt
 ```
 
 `POST /query` returns `{answer, citations, is_fallback, plan, retrieved, latency_ms}` and
-echoes an `X-Correlation-ID` response header. A pipeline failure answers `502` with a
-fixed safe message, never a stack trace; a missing or blank `query` answers `422`.
+echoes an `X-Correlation-ID` response header. A pipeline failure answers `502` with a fixed
+safe message, never a stack trace; a pipeline that outruns `REQUEST_TIMEOUT_SECONDS` answers
+`504`; a missing, blank, or over-2,000-character `query` answers `422`; and a caller over its
+request budget answers `429` with `Retry-After`, before any Azure call is made.
+
+The service is public and unauthenticated on purpose, so a **request budget**, not a login,
+is what bounds the Azure OpenAI bill — per caller and per process, on `POST /query` only.
+See [Configuration](#configuration) for the knobs and
+[docs/architecture.md](docs/architecture.md) for why the caller is identified by
+`X-Client-IP` rather than `X-Forwarded-For`.
 
 `GET /` serves [static/index.html](static/index.html) — open <http://127.0.0.1:8000> and
 ask a question in the browser. It is a single page with inline CSS/JS (no build step, no
@@ -170,8 +179,13 @@ The system is **designed for** a ~5M-word corpus and 50 concurrent users at
 p90 ≤ 15 s / p99 ≤ 30 s; the **demo** ingests the 1,014-control catalog and was
 load-tested at 10 users with an analytical extrapolation to 50 (decisions D2/D3).
 
+The rate limiter must be **off** for the run: the load test drives ~63 requests/minute from
+one address, so with the default budgets in place it would measure the limiter rather than
+the pipeline.
+
 ```bash
-uvicorn llm_policy_library.api:app --workers 4   # then, in another shell:
+RATE_LIMIT_PER_IP_PER_MINUTE=0 RATE_LIMIT_GLOBAL_PER_MINUTE=0 \
+    uvicorn llm_policy_library.api:app --workers 4   # then, in another shell:
 locust -f loadtest/locustfile.py --headless -u 10 -r 2 --run-time 6m \
     --host http://127.0.0.1:8000
 ```
@@ -215,6 +229,17 @@ a message naming each variable to fix. Three settings carry design weight:
 - `LLM_REASONING_EFFORT` — deployable Azure OpenAI chat models reject
   `temperature`/`top_p`/`seed`, so determinism is grounding-enforced instead (decision D7;
   see [docs/architecture.md](docs/architecture.md)).
+- `RATE_LIMIT_PER_IP_PER_MINUTE` (default `10`) / `RATE_LIMIT_GLOBAL_PER_MINUTE` (default
+  `30`) — the two request budgets on `POST /query`. The per-caller budget bounds one abuser;
+  the global one bounds what the per-caller budget cannot (many callers each under their own
+  limit), and is what actually caps the bill — ~75 req/min would exhaust the 150 RPM chat
+  quota. Both are **sustained** rates: a token bucket holds a bucketful in reserve, so the
+  worst case in any 60 s window is **twice** the number set, and the defaults are sized
+  against that (30 sustained ⇒ 60 req/min worst case ⇒ ~120 chat calls, inside quota). `0`
+  disables a budget, which is what the load test needs.
+- `REQUEST_TIMEOUT_SECONDS` (default `60`) — how long `POST /query` waits for the pipeline
+  before answering `504`. Above the measured p99 (~11 s), below the frontend's 120 s abort,
+  so the server gives up first and says why.
 
 ## Logging
 

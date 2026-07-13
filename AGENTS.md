@@ -4,9 +4,9 @@ The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RE
 
 # Meta Guidelines
 
-- If not running in a Docker container, stop and confirm with the user before continuing.
-- Always read relevant code & documentation, and plan your actions before making a file change.
-- State assumptions explicitly. When you notice an ambiguity that materially affects the project (e.g. scope, architecture, dataflow, correctness, or security), confirm with the user before continuing.
+- If not running in a Docker container, you MUST stop and confirm with the user before continuing.
+- You MUST read relevant code & documentation, and plan your actions before making a file change.
+- State assumptions explicitly. When you notice an ambiguity that materially affects the project (e.g. scope, architecture, dataflow, correctness, or security), you MUST confirm with the user before continuing.
 - Isolated subtasks (tasks that require little or no additional context from the main conversation and produce a small, well-bounded result for follow-up work) SHOULD be executed in subagents to keep the main context window clean.
 - Before considering a task done, you MUST re-check that all instructions in this file are followed.
 
@@ -15,7 +15,9 @@ The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RE
 - Each document SHOULD own its assigned topic, and other docs SHOULD link or summarize without becoming competing sources of truth.
 - Documentation MUST be updated as soon as its content no longer reflects the latest state of the project.
 - `TASK.md` describes the end goals of this project.
-- `README.md` describes project structure, architecture, dataflow, design decisions & assumptions, and build & test procedures.
+- `TODO.md` is the phased execution plan and log. Its status blocks record what was actually done and decided.
+- `README.md` describes project structure, architecture, dataflow, and build & test procedures.
+- Design decisions & assumptions MUST be documented in whichever document fits best (e.g. README, a design doc, or the task's execution log), and SHOULD record the reasoning behind them.
 - New or modified functions/methods in non-test scripts MUST have Google-style docstrings; unit test functions MUST have a one-line docstring.
 
 # Implementation Guidelines
@@ -23,7 +25,7 @@ The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RE
 - Implement only what was asked with small, surgical changes. Do not add features or unrelated refactors unless explicitly asked to.
 - Prefer the simplest implementation. Each function/class/module MUST have a single responsibility and a well-defined interface; other SOLID principles MAY be relaxed in favor of simplicity.
 - Implementations MUST be easy to test with minimal mocking. Pure functions are preferred, and side effects SHOULD be isolated.
-- Code SHOULD use up-to-date features from languages, libraries, frameworks, and external services.
+- Code SHOULD use up-to-date features from languages, libraries, frameworks, and external services. These change quickly and assumptions about them go stale, most dangerously at planning time. You SHOULD verify behavior empirically or against the documentation for the version in use before planning or building on them.
 
 # Test Guidelines
 
@@ -47,7 +49,7 @@ All non-trivial changes that touch code, test, or configuration MUST go through 
 
 Use the `/adversarial-review` skill (`.claude/skills/adversarial-review/`) as a function call: provide the context of the change — its purpose, the in-scope paths, known-unrelated dirty paths, and out-of-scope items the user has already accepted — and expect a triaged review report without code changes.
 
-The reviewer should scrutinize the change with the following questions:
+The reviewer scrutinizes the change with the following questions:
 
 - Does it achieve the intended purpose?
 - Is it bug-free?

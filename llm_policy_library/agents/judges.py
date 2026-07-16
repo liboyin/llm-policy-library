@@ -1,11 +1,11 @@
 """LLM-judge agents for the evaluation harness: faithfulness and answer relevancy.
 
-Each judge is a small PydanticAI agent over the same chat deployment the
-pipeline uses, replacing the `azure-ai-evaluation` Groundedness/Relevance
-evaluators without pulling in a second LLM framework. Both answer with a
-`JudgeVerdict` JSON schema — a one-sentence reason and an integer score — so a
-malformed verdict is a validation failure PydanticAI retries, never a prose
-blob the harness would have to parse.
+Each judge is a small Microsoft Agent Framework agent over the same chat
+deployment the pipeline uses, standing in for a bought-in evaluation SDK without
+pulling in a second LLM framework. Both answer with a `JudgeVerdict` JSON schema
+— a one-sentence reason and an integer score, the provider's native structured
+outputs — so a malformed verdict is a parse failure the harness retries, never a
+prose blob it would have to interpret.
 
 The two judges deliberately score different things and see different evidence:
 
@@ -24,15 +24,20 @@ comparable with the old groundedness/relevance columns.
 """
 
 import logging
+from typing import Any
 
+from agent_framework import Agent
+from agent_framework.openai import OpenAIChatClient, OpenAIChatOptions
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_ai import Agent, NativeOutput
-from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
 
 from llm_policy_library.config import ReasoningEffort
 from llm_policy_library.prompts import get_prompt
 
 logger = logging.getLogger(__name__)
+
+
+class JudgeError(RuntimeError):
+    """Raised when a judge returns no structured verdict."""
 
 
 class JudgeVerdict(BaseModel):
@@ -60,16 +65,20 @@ class JudgeVerdict(BaseModel):
 
 # Both judges constrain the model's output shape to a `JudgeVerdict`; they
 # differ only in instructions and in what evidence their prompt carries.
-JudgeAgent = Agent[None, JudgeVerdict]
+JudgeOptions = OpenAIChatOptions[JudgeVerdict]
+JudgeAgent = Agent[JudgeOptions]
 
 
 def _build_judge(
-    model: OpenAIChatModel, reasoning_effort: ReasoningEffort, instructions_key: str, name: str
+    chat_client: OpenAIChatClient[JudgeOptions],
+    reasoning_effort: ReasoningEffort,
+    instructions_key: str,
+    name: str,
 ) -> JudgeAgent:
-    """Construct one judge agent over a PydanticAI chat model.
+    """Construct one judge agent over an Azure OpenAI chat client.
 
     Args:
-        model: Model bound to the chat deployment.
+        chat_client: Client bound to the chat deployment.
         reasoning_effort: Reasoning effort to request on every call.
         instructions_key: Prompt-store key of the judge's instructions.
         name: The agent's name, for logs and traces.
@@ -77,49 +86,43 @@ def _build_judge(
     Returns:
         The configured agent.
     """
-    return Agent(
-        model,
-        instructions=get_prompt(instructions_key),
-        # `NativeOutput` selects the provider's native structured outputs, as in
-        # `planner.build_planner`; the default mode would wrap the schema in a
-        # synthetic tool call.
-        output_type=NativeOutput(JudgeVerdict),
-        # See `planner.build_planner` on why the key must be exactly
-        # `openai_reasoning_effort`: PydanticAI silently ignores unknown keys.
-        model_settings=OpenAIChatModelSettings(openai_reasoning_effort=reasoning_effort),
-        name=name,
-    )
+    # See `agents.planner.build_planner` on why the effort value is typed loosely.
+    reasoning: Any = {"effort": reasoning_effort}
+    options: JudgeOptions = {"response_format": JudgeVerdict, "reasoning": reasoning}
+    return Agent(chat_client, get_prompt(instructions_key), name=name, default_options=options)
 
 
 def build_faithfulness_judge(
-    model: OpenAIChatModel, reasoning_effort: ReasoningEffort
+    chat_client: OpenAIChatClient[JudgeOptions], reasoning_effort: ReasoningEffort
 ) -> JudgeAgent:
     """Construct the faithfulness (groundedness) judge.
 
     Args:
-        model: Model bound to the chat deployment.
-        reasoning_effort: Reasoning effort to request on every call.
-
-    Returns:
-        The configured agent.
-    """
-    return _build_judge(model, reasoning_effort, "faithfulness_judge_instructions", "faithfulness")
-
-
-def build_answer_relevancy_judge(
-    model: OpenAIChatModel, reasoning_effort: ReasoningEffort
-) -> JudgeAgent:
-    """Construct the answer-relevancy judge.
-
-    Args:
-        model: Model bound to the chat deployment.
+        chat_client: Client bound to the chat deployment.
         reasoning_effort: Reasoning effort to request on every call.
 
     Returns:
         The configured agent.
     """
     return _build_judge(
-        model, reasoning_effort, "answer_relevancy_judge_instructions", "answer_relevancy"
+        chat_client, reasoning_effort, "faithfulness_judge_instructions", "faithfulness"
+    )
+
+
+def build_answer_relevancy_judge(
+    chat_client: OpenAIChatClient[JudgeOptions], reasoning_effort: ReasoningEffort
+) -> JudgeAgent:
+    """Construct the answer-relevancy judge.
+
+    Args:
+        chat_client: Client bound to the chat deployment.
+        reasoning_effort: Reasoning effort to request on every call.
+
+    Returns:
+        The configured agent.
+    """
+    return _build_judge(
+        chat_client, reasoning_effort, "answer_relevancy_judge_instructions", "answer_relevancy"
     )
 
 
@@ -142,11 +145,18 @@ async def judge_faithfulness(
 
     Returns:
         The integer 1-5 faithfulness score.
+
+    Raises:
+        JudgeError: If the model returned no structured verdict.
+        ValidationError: If the model's verdict fails schema validation; it
+            propagates so the harness retries and records None on final failure.
     """
     prompt = get_prompt(
         "faithfulness_judge_prompt", question=question, answer=answer, context=context
     )
-    verdict = (await agent.run(prompt)).output
+    verdict = (await agent.run(prompt)).value
+    if verdict is None:
+        raise JudgeError("faithfulness judge returned no structured verdict")
     logger.info(
         "faithfulness judged",
         extra={"question": question, "score": verdict.score, "reasoning": verdict.reasoning},
@@ -166,9 +176,16 @@ async def judge_answer_relevancy(agent: JudgeAgent, *, question: str, answer: st
 
     Returns:
         The integer 1-5 answer-relevancy score.
+
+    Raises:
+        JudgeError: If the model returned no structured verdict.
+        ValidationError: If the model's verdict fails schema validation; it
+            propagates so the harness retries and records None on final failure.
     """
     prompt = get_prompt("answer_relevancy_judge_prompt", question=question, answer=answer)
-    verdict = (await agent.run(prompt)).output
+    verdict = (await agent.run(prompt)).value
+    if verdict is None:
+        raise JudgeError("answer-relevancy judge returned no structured verdict")
     logger.info(
         "answer relevancy judged",
         extra={"question": question, "score": verdict.score, "reasoning": verdict.reasoning},

@@ -21,8 +21,9 @@ Four things are measured, and only one of them needs a chat model:
   that ranks the strongly-relevant controls above the weakly-relevant, with no
   external evaluator involved.
 * **Answer quality** — faithfulness and answer relevancy from two injected
-  LLM judges (concretely, the PydanticAI agents in `agents.judges`, run through
-  the same Azure OpenAI deployment the pipeline uses), each an integer 1-5.
+  LLM judges (concretely, the Microsoft Agent Framework agents in `agents.judges`,
+  run through the same Azure OpenAI deployment the pipeline uses), each an
+  integer 1-5.
 * **Citation validity** — every inline `[control-id]` in the answer must be a
   control that was actually retrieved. This reuses the Response Agent's own
   citation parser, so the check matches what the pipeline itself enforced; an
@@ -785,8 +786,9 @@ def build_markdown_report(report: EvaluationReport) -> str:
         "the hand-labeled golden set (`evaluation/golden_set.json`). Recall and "
         f"graded NDCG@{k} are computed directly from the golden qrels — pure, "
         "deterministic math with no external evaluator. Faithfulness and answer "
-        "relevancy are LLM-judge scores (integer 1-5) from two PydanticAI judge "
-        "agents on the same Azure OpenAI deployment the pipeline uses.",
+        "relevancy are LLM-judge scores (integer 1-5) from two Microsoft Agent "
+        "Framework judge agents on the same Azure OpenAI deployment the pipeline "
+        "uses.",
         "",
         "Recall is shown two ways. **Exact-ID** credits only a retrieved control "
         "whose ID matches a labelled one. **Base-family** also credits a "

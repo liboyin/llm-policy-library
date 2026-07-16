@@ -5,8 +5,9 @@ Invoke from the repository root::
     python evaluation/run_eval.py
 
 The run loads the golden set, opens a live pipeline, and builds the two
-PydanticAI judge agents (faithfulness and answer relevancy) over the same chat
-deployment the pipeline uses, then writes two artifacts to ``samples/``:
+Microsoft Agent Framework judge agents (faithfulness and answer relevancy) over
+the same chat deployment the pipeline uses, then writes two artifacts to
+``samples/``:
 
 * ``evaluation_report.md`` — the human-readable report (TASK.md's "sample
   execution outputs" deliverable): an aggregate table plus a per-query section.
@@ -29,11 +30,10 @@ from functools import partial
 from pathlib import Path
 from typing import Final
 
-from openai import AsyncAzureOpenAI
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.azure import AzureProvider
+from agent_framework.openai import OpenAIChatClient
 
 from llm_policy_library.agents.judges import (
+    JudgeOptions,
     build_answer_relevancy_judge,
     build_faithfulness_judge,
     judge_answer_relevancy,
@@ -64,33 +64,32 @@ async def _evaluate() -> None:
             "evaluation started",
             extra={"run_id": run_id, "queries": len(golden_set)},
         )
-        # The judges get their own chat client so their traffic cannot outlive
-        # this block; it is pinned to the same dated API version the pipeline's
-        # chat client uses (`config.py` is the single source for versions).
-        async with AsyncAzureOpenAI(
+        # The judges get their own chat client, distinct from the pipeline's, so
+        # judge traffic is never confused with a served request; it is pinned to
+        # the same API version the pipeline's chat client uses (`config.py` is the
+        # single source for versions). The Agent Framework client owns its own
+        # transport and exposes no close, so it needs no context manager.
+        judge_client: OpenAIChatClient[JudgeOptions] = OpenAIChatClient(
+            model=settings.azure_openai_chat_deployment,
             azure_endpoint=settings.azure_openai_endpoint,
             api_key=settings.azure_openai_api_key.get_secret_value(),
             api_version=AZURE_OPENAI_CHAT_API_VERSION,
-        ) as judge_client:
-            judge_model = OpenAIChatModel(
-                settings.azure_openai_chat_deployment,
-                provider=AzureProvider(openai_client=judge_client),
+        )
+        effort = settings.llm_reasoning_effort
+        faithfulness_judge = partial(
+            judge_faithfulness, build_faithfulness_judge(judge_client, effort)
+        )
+        answer_relevancy_judge = partial(
+            judge_answer_relevancy, build_answer_relevancy_judge(judge_client, effort)
+        )
+        async with open_pipeline(settings) as pipeline:
+            report = await run_evaluation(
+                pipeline,
+                faithfulness_judge,
+                answer_relevancy_judge,
+                golden_set,
+                ndcg_k=settings.retrieval_top_k,
             )
-            effort = settings.llm_reasoning_effort
-            faithfulness_judge = partial(
-                judge_faithfulness, build_faithfulness_judge(judge_model, effort)
-            )
-            answer_relevancy_judge = partial(
-                judge_answer_relevancy, build_answer_relevancy_judge(judge_model, effort)
-            )
-            async with open_pipeline(settings) as pipeline:
-                report = await run_evaluation(
-                    pipeline,
-                    faithfulness_judge,
-                    answer_relevancy_judge,
-                    golden_set,
-                    ndcg_k=settings.retrieval_top_k,
-                )
         logger.info(
             "evaluation complete",
             extra={

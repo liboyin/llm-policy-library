@@ -1,13 +1,10 @@
 """Unit tests for `llm_policy_library.agents.judges`."""
 
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import ValidationError
-from pydantic_ai import NativeOutput, UnexpectedModelBehavior
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.models.test import TestModel
 
 import llm_policy_library.agents.judges as testee
 from llm_policy_library.prompts import get_prompt
@@ -17,7 +14,7 @@ def judge_returning(value: Any) -> MagicMock:
     """Stub a judge agent whose structured output is `value`.
 
     Args:
-        value: What `AgentRunResult.output` holds, or an exception `run` raises.
+        value: What `AgentResponse.value` yields, or an exception `run` raises.
 
     Returns:
         The stub agent.
@@ -26,7 +23,7 @@ def judge_returning(value: Any) -> MagicMock:
     if isinstance(value, Exception):
         agent.run = AsyncMock(side_effect=value)
     else:
-        agent.run = AsyncMock(return_value=MagicMock(output=value))
+        agent.run = AsyncMock(return_value=MagicMock(value=value))
     return agent
 
 
@@ -45,12 +42,11 @@ def test_judge_verdict_declares_reasoning_before_score() -> None:
 
 def test_build_faithfulness_judge_requests_the_verdict_schema_and_effort() -> None:
     """The verdict shape is enforced by the model's native structured outputs, not parsed."""
-    agent = testee.build_faithfulness_judge(cast(OpenAIChatModel, TestModel()), "minimal")
+    agent = testee.build_faithfulness_judge(MagicMock(), "minimal")
 
-    assert isinstance(agent.output_type, NativeOutput)
-    assert agent.output_type.outputs is testee.JudgeVerdict
-    # See test_planner on why the exact settings key is load-bearing.
-    assert agent.model_settings == {"openai_reasoning_effort": "minimal"}
+    options = agent.default_options
+    assert options["response_format"] is testee.JudgeVerdict
+    assert options["reasoning"] == {"effort": "minimal"}
 
 
 def test_faithfulness_instructions_scope_the_judge_to_the_supplied_evidence() -> None:
@@ -63,11 +59,11 @@ def test_faithfulness_instructions_scope_the_judge_to_the_supplied_evidence() ->
 
 def test_build_answer_relevancy_judge_requests_the_verdict_schema_and_effort() -> None:
     """Both judges share one verdict schema so their scores land on one comparable scale."""
-    agent = testee.build_answer_relevancy_judge(cast(OpenAIChatModel, TestModel()), "minimal")
+    agent = testee.build_answer_relevancy_judge(MagicMock(), "minimal")
 
-    assert isinstance(agent.output_type, NativeOutput)
-    assert agent.output_type.outputs is testee.JudgeVerdict
-    assert agent.model_settings == {"openai_reasoning_effort": "minimal"}
+    options = agent.default_options
+    assert options["response_format"] is testee.JudgeVerdict
+    assert options["reasoning"] == {"effort": "minimal"}
 
 
 def test_answer_relevancy_instructions_exclude_grounding() -> None:
@@ -105,11 +101,19 @@ async def test_judge_faithfulness_survives_braces_in_the_judged_text() -> None:
     assert "Set {timeout} per [ac-12]." in prompt
 
 
+async def test_judge_faithfulness_raises_when_the_model_returns_no_verdict() -> None:
+    """A missing structured verdict must raise so the harness retries, not read a None score."""
+    agent = judge_returning(None)
+
+    with pytest.raises(testee.JudgeError, match="no structured verdict"):
+        await testee.judge_faithfulness(agent, question="q", answer="a", context="c")
+
+
 async def test_judge_faithfulness_propagates_a_model_failure() -> None:
     """The harness owns retries and None-recording; swallowing errors here would defeat both."""
-    agent = judge_returning(UnexpectedModelBehavior("Exceeded maximum retries"))
+    agent = judge_returning(RuntimeError("Exceeded maximum retries"))
 
-    with pytest.raises(UnexpectedModelBehavior):
+    with pytest.raises(RuntimeError):
         await testee.judge_faithfulness(agent, question="q", answer="a", context="c")
 
 
@@ -128,9 +132,17 @@ async def test_judge_answer_relevancy_shows_the_question_and_answer_only() -> No
     assert "control statements" not in prompt
 
 
+async def test_judge_answer_relevancy_raises_when_the_model_returns_no_verdict() -> None:
+    """A missing structured verdict must raise so the harness retries, not read a None score."""
+    agent = judge_returning(None)
+
+    with pytest.raises(testee.JudgeError, match="no structured verdict"):
+        await testee.judge_answer_relevancy(agent, question="q", answer="a")
+
+
 async def test_judge_answer_relevancy_propagates_a_model_failure() -> None:
     """The harness owns retries and None-recording; see the faithfulness twin."""
-    agent = judge_returning(UnexpectedModelBehavior("Exceeded maximum retries"))
+    agent = judge_returning(RuntimeError("Exceeded maximum retries"))
 
-    with pytest.raises(UnexpectedModelBehavior):
+    with pytest.raises(RuntimeError):
         await testee.judge_answer_relevancy(agent, question="q", answer="a")

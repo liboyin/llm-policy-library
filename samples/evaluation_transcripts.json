@@ -8,56 +8,45 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "API security",
-          "purpose": "Find controls that specifically address securing application programming interfaces, including authentication, authorization, input validation, rate limiting, and logging for APIs."
-        },
-        {
-          "search_query": "application programming interface",
-          "purpose": "Catch controls that refer to APIs using the full phrase rather than the abbreviation, to ensure no API-related requirements are missed."
+          "search_query": "API security protections for authentication, authorization, input validation, rate limiting, and secure transmission for APIs",
+          "purpose": "Find controls that require securing APIs through authentication and authorization, input validation and sanitization, transport encryption, throttling/rate limiting, logging and monitoring, and API gateway or boundary protections."
         }
       ],
       "retrieved": [
         {
-          "id": "si-3.8",
-          "title": "Detect Unauthorized Commands",
-          "description": "(a) Detect the following unauthorized operating system commands through the kernel application programming interface on [Assignment: system hardware components]: [Assignment: unauthorized operating system commands] ; and\n(b) [Selection (one or more): issue a warning; audit the command execution; prevent the execution of the command].",
-          "category": "System and Information Integrity",
-          "score": 2.404094934463501
-        },
-        {
-          "id": "sa-11.9",
-          "title": "Interactive Application Security Testing",
-          "description": "Require the developer of the system, system component, or system service to employ interactive application security testing tools to identify flaws and document the results.",
-          "category": "System and Services Acquisition",
-          "score": 2.2435202598571777
-        },
-        {
-          "id": "ac-16.7",
-          "title": "Consistent Attribute Interpretation",
-          "description": "Provide a consistent interpretation of security and privacy attributes transmitted between distributed system components.",
+          "id": "ac-4.22",
+          "title": "Access Only",
+          "description": "Provide access from a single device to computing platforms, applications, or data residing in multiple different security domains, while preventing information flow between the different security domains.",
           "category": "Access Control",
-          "score": 2.2213659286499023
+          "score": 2.095928192138672
+        },
+        {
+          "id": "ac-20.1",
+          "title": "Limits on Authorized Use",
+          "description": "Permit authorized individuals to use an external system to access the system or to process, store, or transmit organization-controlled information only after:\n  (a) Verification of the implementation of controls on the external system as specified in the organization’s security and privacy policies and security and privacy plans; or\n  (b) Retention of approved system connection or processing agreements with the organizational entity hosting the external system.",
+          "category": "Access Control",
+          "score": 2.0712482929229736
+        },
+        {
+          "id": "ia-5.6",
+          "title": "Protection of Authenticators",
+          "description": "Protect authenticators commensurate with the security category of the information to which use of the authenticator permits access.",
+          "category": "Identification and Authentication",
+          "score": 2.050157308578491
+        },
+        {
+          "id": "sa-4.7",
+          "title": "NIAP-approved Protection Profiles ",
+          "description": "(a) Limit the use of commercially provided information assurance and information assurance-enabled information technology products to those products that have been successfully evaluated against a National Information Assurance partnership (NIAP)-approved Protection Profile for a specific technology type, if such a profile exists; and\n(b) Require, if no NIAP-approved Protection Profile exists for a specific technology type but a commercially provided information technology product relies on cryptographic functionality to enforce its security policy, that the cryptographic module is FIPS-validated or NSA-approved.",
+          "category": "System and Services Acquisition",
+          "score": 2.021179437637329
         },
         {
           "id": "ia-9",
           "title": "Service Identification and Authentication",
           "description": "Uniquely identify and authenticate [Assignment: system services and applications] before establishing communications with devices, users, or other services or applications.",
           "category": "Identification and Authentication",
-          "score": 2.1428732872009277
-        },
-        {
-          "id": "ac-4.22",
-          "title": "Access Only",
-          "description": "Provide access from a single device to computing platforms, applications, or data residing in multiple different security domains, while preventing information flow between the different security domains.",
-          "category": "Access Control",
-          "score": 2.127653121948242
-        },
-        {
-          "id": "ac-3.12",
-          "title": "Assert and Enforce Application Access",
-          "description": "(a) Require applications to assert, as part of the installation process, the access needed to the following system applications and functions: [Assignment: system applications and functions];\n(b) Provide an enforcement mechanism to prevent unauthorized access; and\n(c) Approve access changes after initial installation of the application.",
-          "category": "Access Control",
-          "score": 2.1161773204803467
+          "score": 2.0044307708740234
         }
       ],
       "relevant": {
@@ -69,7 +58,7 @@
       },
       "retrieval": {
         "recall": 0.0,
-        "family_recall": 0.4,
+        "family_recall": 0.2,
         "ndcg": 0.0
       },
       "answer_quality": {
@@ -79,15 +68,14 @@
       "citations": {
         "grounded": [
           "ia-9",
-          "ac-16.7",
-          "ac-3.12",
+          "ia-5.6",
+          "ac-20.1",
           "ac-4.22",
-          "sa-11.9",
-          "si-3.8"
+          "sa-4.7"
         ],
         "invented": []
       },
-      "answer": "The supplied controls that apply to API security address authentication of services, application-level access assertions and enforcement, consistent attribute interpretation across components, use of interactive testing, and detection of unauthorized commands. Specifically:\n\n- Require services and applications that implement or consume APIs to be uniquely identified and authenticated before they communicate, which helps ensure only authorized API clients and services can establish connections: [ia-9].\n\n- Ensure distributed API components interpret security and privacy attributes consistently when those attributes are transmitted between components (for example, tokens, claims, or attribute flags), reducing mismatches that could lead to privilege or data exposure: [ac-16.7].\n\n- Require applications to assert what access they need during installation and provide enforcement to prevent unauthorized access (and require approval for later access changes). Applied to APIs, this supports least-privilege declarations for API consumers/clients and runtime enforcement of those declared permissions: [ac-3.12].\n\n- Provide mechanisms to allow a single device to access resources across multiple security domains while preventing information flow between domains. For APIs that mediate cross-domain access, this supports containment and information flow controls between domains: [ac-4.22].\n\n- Require developers to use interactive application security testing tools to identify and document security flaws in the application or service (including API logic and endpoints): [sa-11.9].\n\n- Detect unauthorized operating system commands invoked via kernel APIs on specified system hardware components and choose to warn, audit, or prevent such commands. This helps protect API hosts from unauthorized command execution as part of API attacks: [si-3.8].\n\nIf you need controls for other API-specific topics (for example, rate limiting, payload validation, transport-layer protection, token formats, logging schemas, or API gateway configuration), those are not covered in the supplied controls; the supplied items do not address those specific mechanisms."
+      "answer": "Applicable controls from the supplied set that relate to API security are:\n\n- Service identification and authentication: APIs (as system services/applications) must be uniquely identified and authenticated before establishing communications with clients, other services, or devices ([ia-9]). This covers mutual identification and authentication of API endpoints and callers.\n\n- Protection of authenticators: Any authenticators used by API clients (API keys, tokens, client certificates, etc.) must be protected commensurate with the sensitivity of the information the API grants access to ([ia-5.6]). This applies to storage, transmission, and handling of those authenticators.\n\n- Limits on authorized use of external systems: If an API allows access from or through external systems, permit such use only after verifying the external system implements required controls per organization policies or after retaining approved connection/processing agreements ([ac-20.1]). This applies when APIs are consumed by or integrated with third-party or external-hosted systems.\n\n- Access only across domains: If an API is used to give a single device access to resources across multiple security domains, ensure the API enforces controls to provide access while preventing information flow between those domains ([ac-4.22]). This is relevant for cross-domain API proxies or gateways.\n\n- Acquisition of evaluated products: When acquiring commercial products or components (e.g., API gateways, TLS/cryptographic libraries) that enforce API security and rely on cryptography, prefer products evaluated against NIAP Protection Profiles where available, or require FIPS-validated/NSA-approved cryptographic modules if no profile exists ([sa-4.7]).\n\nIf you need mapping to specific API controls (e.g., rate limiting, input validation, TLS, scopes/authorization), those topics are not covered by the supplied controls."
     },
     {
       "query": "How should sensitive data be protected in cloud systems?",
@@ -96,116 +84,84 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "Protecting sensitive data in cloud systems (encryption, data-at-rest, data-in-transit, key management)",
-          "purpose": "Find controls addressing encryption of data at rest and in transit, key management, and protection of sensitive data stored or processed in cloud/remote systems."
+          "search_query": "protect sensitive data in cloud systems: encryption at rest and in transit, key management, data minimization, access controls, data loss prevention",
+          "purpose": "Find controls that require encryption, key management, access restrictions, and data loss prevention for sensitive data stored, processed, or transmitted in cloud environments."
         },
         {
-          "search_query": "Access control for sensitive data and privileged user access",
-          "purpose": "Find controls about limiting and auditing access to sensitive data, privileged account management, and least privilege in cloud environments."
-        },
-        {
-          "search_query": "Data retention, disposal, and sanitization of sensitive data",
-          "purpose": "Find controls on data retention, secure disposal, and sanitization/destruction of sensitive data in cloud storage and backups."
+          "search_query": "data classification and handling of sensitive information",
+          "purpose": "Find controls that require identifying, labeling, and handling data based on sensitivity to apply appropriate protections."
         }
       ],
       "retrieved": [
         {
-          "id": "ac-2.7",
-          "title": "Privileged User Accounts",
-          "description": "(a) Establish and administer privileged user accounts in accordance with [Selection: a role-based access scheme; an attribute-based access scheme];\n(b) Monitor privileged role or attribute assignments;\n(c) Monitor changes to roles or attributes; and\n(d) Revoke access when privileged role or attribute assignments are no longer appropriate.",
-          "category": "Access Control",
-          "score": 2.794719934463501
+          "id": "ps-3.1",
+          "title": "Classified Information",
+          "description": "Verify that individuals accessing a system processing, storing, or transmitting classified information are cleared and indoctrinated to the highest classification level of the information to which they have access on the system.",
+          "category": "Personnel Security",
+          "score": 2.4842047691345215
         },
         {
-          "id": "ac-3.4",
-          "title": "Discretionary Access Control",
-          "description": "Enforce [Assignment: organization-defined discretionary access control policy] over the set of covered subjects and objects specified in the policy, and where the policy specifies that a subject that has been granted access to information can do one or more of the following:\n  (a) Pass the information to any other subjects or objects;\n  (b) Grant its privileges to other subjects;\n  (c) Change security attributes on subjects, objects, the system, or the system’s components;\n  (d) Choose the security attributes to be associated with newly created or revised objects; or\n  (e) Change the rules governing access control.",
-          "category": "Access Control",
-          "score": 2.792593002319336
-        },
-        {
-          "id": "ac-17.4",
-          "title": "Privileged Commands and Access",
-          "description": "(a) Authorize the execution of privileged commands and access to security-relevant information via remote access only in a format that provides assessable evidence and for the following needs: [Assignment: organization-defined needs] ; and\n(b) Document the rationale for remote access in the security plan for the system.",
-          "category": "Access Control",
-          "score": 2.760690689086914
-        },
-        {
-          "id": "ac-17.2",
-          "title": "Protection of Confidentiality and Integrity Using Encryption",
-          "description": "Implement cryptographic mechanisms to protect the confidentiality and integrity of remote access sessions.",
-          "category": "Access Control",
-          "score": 2.747929811477661
-        },
-        {
-          "id": "ac-6",
-          "title": "Least Privilege",
-          "description": "Employ the principle of least privilege, allowing only authorized accesses for users (or processes acting on behalf of users) that are necessary to accomplish assigned organizational tasks.",
-          "category": "Access Control",
-          "score": 2.6997220516204834
-        },
-        {
-          "id": "mp-6",
-          "title": "Media Sanitization",
-          "description": "a. Sanitize [Assignment: organization-defined system media] prior to disposal, release out of organizational control, or release for reuse using [Assignment: organization-defined sanitization techniques and procedures] ; and\nb. Employ sanitization mechanisms with the strength and integrity commensurate with the security category or classification of the information.",
-          "category": "Media Protection",
-          "score": 2.6458427906036377
-        },
-        {
-          "id": "ac-4.25",
-          "title": "Data Sanitization",
-          "description": "When transferring information between different security domains, sanitize data to minimize [Selection (one or more): delivery of malicious content, command and control of malicious code, malicious code augmentation, and steganography-encoded data; spillage of sensitive information] in accordance with [Assignment: policy].",
-          "category": "Access Control",
-          "score": 2.548718214035034
-        },
-        {
-          "id": "si-12.3",
-          "title": "Information Disposal",
-          "description": "Use the following techniques to dispose of, destroy, or erase information following the retention period: [Assignment: organization-defined techniques].",
-          "category": "System and Information Integrity",
-          "score": 2.4266035556793213
-        },
-        {
-          "id": "sc-8.1",
-          "title": "Cryptographic Protection",
-          "description": "Implement cryptographic mechanisms to [Selection (one or more): prevent unauthorized disclosure of information; detect changes to information] during transmission.",
-          "category": "System and Communications Protection",
-          "score": 2.3346188068389893
+          "id": "ma-5.2",
+          "title": "Security Clearances for Classified Systems",
+          "description": "Verify that personnel performing maintenance and diagnostic activities on a system processing, storing, or transmitting classified information possess security clearances and formal access approvals for at least the highest classification level and for compartments of information on the system.",
+          "category": "Maintenance",
+          "score": 2.4067533016204834
         },
         {
           "id": "sc-28",
           "title": "Protection of Information at Rest",
           "description": "Protect the [Selection (one or more): confidentiality; integrity] of the following information at rest: [Assignment: information at rest].",
           "category": "System and Communications Protection",
-          "score": 2.320617437362671
+          "score": 2.370420217514038
         },
         {
-          "id": "si-12",
-          "title": "Information Management and Retention",
-          "description": "Manage and retain information within the system and information output from the system in accordance with applicable laws, executive orders, directives, regulations, policies, standards, guidelines and operational requirements.",
-          "category": "System and Information Integrity",
-          "score": 2.293057441711426
-        },
-        {
-          "id": "ia-13.1",
-          "title": "Protection of Cryptographic Keys",
-          "description": "Cryptographic keys that protect access tokens are generated, managed, and protected from disclosure and misuse.",
-          "category": "Identification and Authentication",
-          "score": 2.2818028926849365
+          "id": "ac-17.2",
+          "title": "Protection of Confidentiality and Integrity Using Encryption",
+          "description": "Implement cryptographic mechanisms to protect the confidentiality and integrity of remote access sessions.",
+          "category": "Access Control",
+          "score": 2.31095814704895
         },
         {
           "id": "sc-28.1",
           "title": "Cryptographic Protection",
           "description": "Implement cryptographic mechanisms to prevent unauthorized disclosure and modification of the following information at rest on [Assignment: system components or media]: [Assignment: information].",
           "category": "System and Communications Protection",
-          "score": 2.277726650238037
+          "score": 2.3019189834594727
         },
         {
-          "id": "mp-4",
-          "title": "Media Storage",
-          "description": "a. Physically control and securely store [Assignment: organization-defined types of digital and/or non-digital media] within [Assignment: organization-defined controlled areas] ; and\nb. Protect system media types defined in MP-4a until the media are destroyed or sanitized using approved equipment, techniques, and procedures.",
+          "id": "sc-8.1",
+          "title": "Cryptographic Protection",
+          "description": "Implement cryptographic mechanisms to [Selection (one or more): prevent unauthorized disclosure of information; detect changes to information] during transmission.",
+          "category": "System and Communications Protection",
+          "score": 2.2765746116638184
+        },
+        {
+          "id": "sc-4.2",
+          "title": "Multilevel or Periods Processing",
+          "description": "Prevent unauthorized information transfer via shared resources in accordance with [Assignment: procedures] when system processing explicitly switches between different information classification levels or security categories.",
+          "category": "System and Communications Protection",
+          "score": 2.217555522918701
+        },
+        {
+          "id": "pe-19.1",
+          "title": "National Emissions Policies and Procedures",
+          "description": "Protect system components, associated data communications, and networks in accordance with national Emissions Security policies and procedures based on the security category or classification of the information.",
+          "category": "Physical and Environmental Protection",
+          "score": 2.2092254161834717
+        },
+        {
+          "id": "mp-8.4",
+          "title": "Classified Information",
+          "description": "Downgrade system media containing classified information prior to release to individuals without required access authorizations.",
           "category": "Media Protection",
-          "score": 2.220834255218506
+          "score": 2.202202558517456
+        },
+        {
+          "id": "ac-23",
+          "title": "Data Mining Protection",
+          "description": "Employ [Assignment: techniques] for [Assignment: data storage objects] to detect and protect against unauthorized data mining.",
+          "category": "Access Control",
+          "score": 2.196575403213501
         }
       ],
       "relevant": {
@@ -217,7 +173,7 @@
       "retrieval": {
         "recall": 0.25,
         "family_recall": 0.5,
-        "ndcg": 0.0
+        "ndcg": 0.21310438238558402
       },
       "answer_quality": {
         "faithfulness": 5,
@@ -225,24 +181,20 @@
       },
       "citations": {
         "grounded": [
-          "ac-6",
-          "ac-2.7",
-          "ac-17.4",
           "ac-17.2",
           "sc-8.1",
-          "sc-28.1",
           "sc-28",
-          "ac-3.4",
-          "ia-13.1",
-          "mp-4",
-          "mp-6",
-          "ac-4.25",
-          "si-12.3",
-          "si-12"
+          "sc-28.1",
+          "ps-3.1",
+          "ma-5.2",
+          "sc-4.2",
+          "pe-19.1",
+          "mp-8.4",
+          "ac-23"
         ],
         "invented": []
       },
-      "answer": "To protect sensitive data in cloud systems, apply the supplied controls as follows:\n\n- Limit who can access sensitive data by enforcing least privilege so users and processes have only the authorizations necessary for their tasks [ac-6]. Establish and administer privileged accounts under an access scheme (e.g., role- or attribute-based), monitor privileged assignments and changes, and revoke privileged access when no longer appropriate [ac-2.7]. Authorize and document any remote privileged command execution and access to security-relevant information, restricting such remote use to organization-defined needs and recording the rationale in the system security plan [ac-17.4].\n\n- Protect data in transit and remote sessions with cryptography: implement cryptographic mechanisms to protect confidentiality and integrity of remote access sessions [ac-17.2] and to prevent unauthorized disclosure and detect changes during transmission [sc-8.1].\n\n- Protect data at rest with cryptography: implement cryptographic mechanisms to prevent unauthorized disclosure and modification of specified information at rest on system components or media [sc-28.1], and more generally protect the confidentiality and/or integrity of information at rest as selected in policy [sc-28].\n\n- Control discretionary flow and sharing: enforce the organization-defined discretionary access control policy to govern whether subjects can pass information, grant privileges, change security attributes, set attributes on new objects, or alter access rules [ac-3.4].\n\n- Secure and manage cryptographic keys for access tokens so keys are generated, managed, and protected from disclosure and misuse [ia-13.1].\n\n- Protect physical and logical media: physically control and securely store organization-defined media within controlled areas and maintain protection until media are destroyed or sanitized using approved techniques [mp-4]. Sanitize system media prior to disposal, release, or reuse using organization-defined sanitization techniques commensurate with the information’s security category [mp-6]. When transferring information between different security domains, sanitize data to minimize delivery or control of malicious content, spillage of sensitive information, etc., per policy [ac-4.25].\n\n- Dispose of retained information using organization-defined disposal, destruction, or erasure techniques after the retention period and manage/retain information per applicable requirements [si-12.3] [si-12].\n\nThese controls together cover access restriction and monitoring ([ac-6], [ac-2.7], [ac-3.4], [ac-17.4]), cryptographic protection in transit and at rest ([ac-17.2], [sc-8.1], [sc-28.1], [sc-28], [ia-13.1]), media handling and sanitization ([mp-4], [mp-6], [ac-4.25]), and information disposal/retention ([si-12.3], [si-12]). If you need operational specifics (e.g., exact algorithms, key lengths, or concrete sanitization procedures), those are not provided in the supplied controls."
+      "answer": "Protecting sensitive data in cloud systems should follow the specific controls supplied:\n\n- Use cryptography for data in transit and remote access. Implement cryptographic mechanisms to protect the confidentiality and integrity of remote access sessions [ac-17.2]. Also ensure cryptographic protection during transmission to prevent unauthorized disclosure and/or detect changes to transmitted information as required [sc-8.1].\n\n- Use cryptography for data at rest. Protect the confidentiality and/or integrity of information at rest per the assigned scope [sc-28], and implement cryptographic mechanisms to prevent unauthorized disclosure and modification of information at rest on the designated system components or media [sc-28.1].\n\n- Control and limit personnel access based on clearance and need. Verify that individuals accessing systems that process, store, or transmit classified information are cleared and indoctrinated to the highest classification level they will access [ps-3.1]. For maintenance and diagnostic personnel, verify they possess security clearances and formal access approvals for at least the highest classification level and compartments present on the system [ma-5.2].\n\n- Prevent unauthorized cross-level transfer and leakage. When systems switch between different classification levels or security categories, prevent unauthorized information transfer via shared resources according to established procedures [sc-4.2].\n\n- Protect physical emissions and components according to classification. Protect system components, related data communications, and networks in accordance with national emissions security policies and procedures tied to the security category or classification of the information [pe-19.1].\n\n- Handle media appropriately. Downgrade system media that contains classified information before releasing it to individuals without the required authorizations [mp-8.4].\n\n- Detect and mitigate data-mining threats. Employ assigned techniques to detect and protect specified data storage objects against unauthorized data mining [ac-23].\n\nIf you need these controls applied to a particular cloud service model (IaaS/PaaS/SaaS) or specific implementation steps (algorithms, key management, configuration), the supplied controls do not provide those details; they describe what must be done (for example, “implement cryptographic mechanisms”) but do not specify exact technologies, procedures, or parameter values."
     },
     {
       "query": "Summarise requirements for access control",
@@ -251,45 +203,45 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "Access control requirements",
-          "purpose": "Find all controls that define general access control requirements across NIST SP 800-53 (e.g., AC family statements) to summarize mandatory access control elements."
+          "search_query": "access control requirements for managing access to information systems and resources",
+          "purpose": "Find controls that define requirements for account management, access enforcement, least privilege, separation of duties, and authentication to summarise access control obligations."
         }
       ],
       "retrieved": [
         {
-          "id": "ac-3.12",
-          "title": "Assert and Enforce Application Access",
-          "description": "(a) Require applications to assert, as part of the installation process, the access needed to the following system applications and functions: [Assignment: system applications and functions];\n(b) Provide an enforcement mechanism to prevent unauthorized access; and\n(c) Approve access changes after initial installation of the application.",
+          "id": "ac-3",
+          "title": "Access Enforcement",
+          "description": "Enforce approved authorizations for logical access to information and system resources in accordance with applicable access control policies.",
           "category": "Access Control",
-          "score": 2.971245527267456
+          "score": 2.810316562652588
         },
         {
           "id": "ac-3.3",
           "title": "Mandatory Access Control",
           "description": "Enforce [Assignment: organization-defined mandatory access control policy] over the set of covered subjects and objects specified in the policy, and where the policy:\n  (a) Is uniformly enforced across the covered subjects and objects within the system;\n  (b) Specifies that a subject that has been granted access to information is constrained from doing any of the following;\n    (1) Passing the information to unauthorized subjects or objects;\n    (2) Granting its privileges to other subjects;\n    (3) Changing one or more security attributes (specified by the policy) on subjects, objects, the system, or system components;\n    (4) Choosing the security attributes and attribute values (specified by the policy) to be associated with newly created or modified objects; and\n    (5) Changing the rules governing access control; and\n  (c) Specifies that [Assignment: subjects] may explicitly be granted [Assignment: privileges] such that they are not limited by any defined subset (or all) of the above constraints.",
           "category": "Access Control",
-          "score": 2.8677403926849365
+          "score": 2.742258310317993
         },
         {
-          "id": "ac-19",
-          "title": "Access Control for Mobile Devices",
-          "description": "a. Establish configuration requirements, connection requirements, and implementation guidance for organization-controlled mobile devices, to include when such devices are outside of controlled areas; and\nb. Authorize the connection of mobile devices to organizational systems.",
+          "id": "ac-3.4",
+          "title": "Discretionary Access Control",
+          "description": "Enforce [Assignment: organization-defined discretionary access control policy] over the set of covered subjects and objects specified in the policy, and where the policy specifies that a subject that has been granted access to information can do one or more of the following:\n  (a) Pass the information to any other subjects or objects;\n  (b) Grant its privileges to other subjects;\n  (c) Change security attributes on subjects, objects, the system, or the system’s components;\n  (d) Choose the security attributes to be associated with newly created or revised objects; or\n  (e) Change the rules governing access control.",
           "category": "Access Control",
-          "score": 2.8408007621765137
+          "score": 2.6734914779663086
         },
         {
-          "id": "ac-6.2",
-          "title": "Non-privileged Access for Nonsecurity Functions",
-          "description": "Require that users of system accounts (or roles) with access to [Assignment: security functions or security-relevant information] use non-privileged accounts or roles, when accessing nonsecurity functions.",
+          "id": "ac-3.12",
+          "title": "Assert and Enforce Application Access",
+          "description": "(a) Require applications to assert, as part of the installation process, the access needed to the following system applications and functions: [Assignment: system applications and functions];\n(b) Provide an enforcement mechanism to prevent unauthorized access; and\n(c) Approve access changes after initial installation of the application.",
           "category": "Access Control",
-          "score": 2.8400919437408447
+          "score": 2.6614394187927246
         },
         {
           "id": "ac-20.1",
           "title": "Limits on Authorized Use",
           "description": "Permit authorized individuals to use an external system to access the system or to process, store, or transmit organization-controlled information only after:\n  (a) Verification of the implementation of controls on the external system as specified in the organization’s security and privacy policies and security and privacy plans; or\n  (b) Retention of approved system connection or processing agreements with the organizational entity hosting the external system.",
           "category": "Access Control",
-          "score": 2.779832124710083
+          "score": 2.585582971572876
         }
       ],
       "relevant": {
@@ -300,9 +252,9 @@
         "ac-17": 1
       },
       "retrieval": {
-        "recall": 0.0,
-        "family_recall": 0.4,
-        "ndcg": 0.0
+        "recall": 0.2,
+        "family_recall": 0.2,
+        "ndcg": 0.3937481555797838
       },
       "answer_quality": {
         "faithfulness": 5,
@@ -310,15 +262,11 @@
       },
       "citations": {
         "grounded": [
-          "ac-3.12",
-          "ac-3.3",
-          "ac-19",
-          "ac-6.2",
-          "ac-20.1"
+          "ac-3"
         ],
         "invented": []
       },
-      "answer": "Here are the summarized access-control requirements drawn from the supplied controls:\n\n- Applications must declare during installation what access they require to specified system applications and functions; the system must provide mechanisms that enforce those assertions to prevent unauthorized access, and any post-installation changes to application access must be approved [ac-3.12].\n\n- The organization must enforce a defined mandatory access control (MAC) policy across the covered subjects and objects. That policy must be uniformly applied and constrain subjects who are granted access so they cannot: pass information to unauthorized subjects/objects, delegate their privileges, change specified security attributes, choose security attributes for newly created/modified objects, or modify access-control rules. The policy may also allow specified subjects to be explicitly granted privileges that exempt them from some or all of those constraints [ac-3.3].\n\n- For mobile devices under organizational control, the organization must establish configuration, connection, and implementation requirements (including for devices outside controlled areas) and must authorize mobile-device connections to organizational systems [ac-19].\n\n- Users who have system accounts or roles that provide access to security functions or security-relevant information must use non-privileged accounts/roles when performing nonsecurity functions (i.e., separate privileged security use from routine/nonsecurity use) [ac-6.2].\n\n- External systems may be used to access organizational systems or to process/store/transmit organization-controlled information only after either verifying that the external system implements required controls per the organization’s security/privacy policies and plans, or after retaining approved system-connection or processing agreements with the external hosting entity [ac-20.1].\n\nIf you need controls mapped to specific procedures, roles, or a particular system, those assignment placeholders (e.g., which applications/functions, which subjects/privileges) must be defined by the organization; the supplied controls require enforcement and approval but do not specify those concrete assignments [ac-3.12], [ac-3.3]."
+      "answer": "Summary of access-control requirements (based only on the supplied controls)\n\n- Enforce approved logical-access authorizations to information and system resources in accordance with applicable access-control policies [ac-3].\n\n- Support and enforce organization-defined mandatory access control (MAC) when specified:\n  - The MAC policy must be uniformly enforced across covered subjects and objects [ac-3.3(a)].\n  - The MAC policy can constrain subjects who have access so they cannot (as defined by the policy) pass information to unauthorized subjects/objects, grant their privileges, change specified security attributes, choose attributes/values for newly created or modified objects, or change access-control rules [ac-3.3(b)(1)–(5)].\n  - The policy may explicitly allow particular subjects to be granted privileges that exempt them from some or all of those constraints [ac-3.3(c)].\n\n- Support and enforce organization-defined discretionary access control (DAC) when specified:\n  - Under DAC, a subject granted access may be allowed by policy to pass information to others, grant its privileges, change security attributes on subjects/objects/systems/components, select security attributes for new/revised objects, or change access-control rules [ac-3.4(a)–(e)].\n\n- Require applications (during installation) to declare the access they need to specified system applications and functions, provide an enforcement mechanism to prevent unauthorized access, and require approval for access changes after installation [ac-3.12(a)–(c)].\n\n- Limit authorized use of external systems for accessing or processing/storing/transmitting organization-controlled information by permitting such use only after either verification that the external system implements required controls per organizational security/privacy policies and plans, or retention of an approved system-connection or processing agreement with the entity hosting the external system [ac-20.1(a)–(b)].\n\nIf you need these requirements organized into operational controls or a checklist, tell me which format you prefer."
     },
     {
       "query": "What policies relate to logging and monitoring?",
@@ -327,12 +275,8 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "Audit and accountability logging and monitoring",
-          "purpose": "Find controls that require generating, protecting, and reviewing audit records and monitoring system events (audit logs, log retention, review, and analysis)."
-        },
-        {
-          "search_query": "Continuous monitoring and security monitoring",
-          "purpose": "Find controls that require continuous assessment of security state, monitoring of configurations, and alerts for security incidents (ongoing monitoring programs and tools)."
+          "search_query": "logging and monitoring of system activity, audit logs, and security events",
+          "purpose": "Find controls that require generating, protecting, reviewing, and retaining audit logs and monitoring security events and system activity."
         }
       ],
       "retrieved": [
@@ -341,70 +285,35 @@
           "title": "Event Logging",
           "description": "a. Identify the types of events that the system is capable of logging in support of the audit function: [Assignment: event types];\nb. Coordinate the event logging function with other organizational entities requiring audit-related information to guide and inform the selection criteria for events to be logged;\nc. Specify the following event types for logging within the system: [Assignment: organization-defined event types (subset of the event types defined in [AU-2a.](#au-2_smt.a)) along with the frequency of (or situation requiring) logging for each identified event type];\nd. Provide a rationale for why the event types selected for logging are deemed to be adequate to support after-the-fact investigations of incidents; and\ne. Review and update the event types selected for logging [Assignment: frequency].",
           "category": "Audit and Accountability",
-          "score": 2.751474618911743
-        },
-        {
-          "id": "pm-31",
-          "title": "Continuous Monitoring Strategy",
-          "description": "Develop an organization-wide continuous monitoring strategy and implement continuous monitoring programs that include:\n  a. Establishing the following organization-wide metrics to be monitored: [Assignment: metrics];\n  b. Establishing [Assignment: monitoring frequencies] and [Assignment: assessment frequencies] for control effectiveness;\n  c. Ongoing monitoring of organizationally-defined metrics in accordance with the continuous monitoring strategy;\n  d. Correlation and analysis of information generated by control assessments and monitoring;\n  e. Response actions to address results of the analysis of control assessment and monitoring information; and\n  f. Reporting the security and privacy status of organizational systems to [Assignment: organization-defined personnel or roles] [Assignment: organization-defined frequency].",
-          "category": "Program Management",
-          "score": 2.733751058578491
-        },
-        {
-          "id": "ca-7",
-          "title": "Continuous Monitoring",
-          "description": "Develop a system-level continuous monitoring strategy and implement continuous monitoring in accordance with the organization-level continuous monitoring strategy that includes:\n  a. Establishing the following system-level metrics to be monitored: [Assignment: system-level metrics];\n  b. Establishing [Assignment: frequencies] for monitoring and [Assignment: frequencies] for assessment of control effectiveness;\n  c. Ongoing control assessments in accordance with the continuous monitoring strategy;\n  d. Ongoing monitoring of system and organization-defined metrics in accordance with the continuous monitoring strategy;\n  e. Correlation and analysis of information generated by control assessments and monitoring;\n  f. Response actions to address results of the analysis of control assessment and monitoring information; and\n  g. Reporting the security and privacy status of the system to [Assignment: organization-defined personnel or roles] [Assignment: organization-defined frequency].",
-          "category": "Assessment, Authorization, and Monitoring",
-          "score": 2.628828287124634
-        },
-        {
-          "id": "au-16",
-          "title": "Cross-organizational Audit Logging",
-          "description": "Employ [Assignment: methods] for coordinating [Assignment: audit information] among external organizations when audit information is transmitted across organizational boundaries.",
-          "category": "Audit and Accountability",
-          "score": 2.518056631088257
+          "score": 2.738004684448242
         },
         {
           "id": "au-6.5",
           "title": "Integrated Analysis of Audit Records",
           "description": "Integrate analysis of audit records with analysis of [Selection (one or more): vulnerability scanning information; performance data; system monitoring information; [Assignment: data/information collected from other sources] ] to further enhance the ability to identify inappropriate or unusual activity.",
           "category": "Audit and Accountability",
-          "score": 2.5065364837646484
-        },
-        {
-          "id": "au-14",
-          "title": "Session Audit",
-          "description": "a. Provide and implement the capability for [Assignment: users or roles] to [Selection (one or more): record; view; hear; log] the content of a user session under [Assignment: circumstances] ; and\nb. Develop, integrate, and use session auditing activities in consultation with legal counsel and in accordance with applicable laws, executive orders, directives, regulations, policies, standards, and guidelines.",
-          "category": "Audit and Accountability",
-          "score": 2.5058274269104004
+          "score": 2.458505868911743
         },
         {
           "id": "ma-4.1",
           "title": "Logging and Review",
           "description": "(a) Log [Assignment: organization-defined audit events] for nonlocal maintenance and diagnostic sessions; and\n(b) Review the audit records of the maintenance and diagnostic sessions to detect anomalous behavior.",
           "category": "Maintenance",
-          "score": 2.498915433883667
+          "score": 2.431034564971924
         },
         {
-          "id": "ca-7.4",
-          "title": "Risk Monitoring",
-          "description": "Ensure risk monitoring is an integral part of the continuous monitoring strategy that includes the following:\n  (a) Effectiveness monitoring;\n  (b) Compliance monitoring; and\n  (c) Change monitoring.",
-          "category": "Assessment, Authorization, and Monitoring",
-          "score": 2.4067533016204834
+          "id": "au-12",
+          "title": "Audit Record Generation",
+          "description": "a. Provide audit record generation capability for the event types the system is capable of auditing as defined in [AU-2a](#au-2_smt.a) on [Assignment: system components];\nb. Allow [Assignment: personnel or roles] to select the event types that are to be logged by specific components of the system; and\nc. Generate audit records for the event types defined in [AU-2c](#au-2_smt.c) that include the audit record content defined in [AU-3](#au-3).",
+          "category": "Audit and Accountability",
+          "score": 2.3620903491973877
         },
         {
-          "id": "pm-14",
-          "title": "Testing, Training, and Monitoring",
-          "description": "a. Implement a process for ensuring that organizational plans for conducting security and privacy testing, training, and monitoring activities associated with organizational systems:\n  1. Are developed and maintained; and\n  2. Continue to be executed; and\nb. Review testing, training, and monitoring plans for consistency with the organizational risk management strategy and organization-wide priorities for risk response actions.",
-          "category": "Program Management",
-          "score": 2.3854851722717285
-        },
-        {
-          "id": "ca-5",
-          "title": "Plan of Action and Milestones",
-          "description": "a. Develop a plan of action and milestones for the system to document the planned remediation actions of the organization to correct weaknesses or deficiencies noted during the assessment of the controls and to reduce or eliminate known vulnerabilities in the system; and\nb. Update existing plan of action and milestones [Assignment: frequency] based on the findings from control assessments, independent audits or reviews, and continuous monitoring activities.",
-          "category": "Assessment, Authorization, and Monitoring",
-          "score": 2.314591407775879
+          "id": "pe-6",
+          "title": "Monitoring Physical Access",
+          "description": "a. Monitor physical access to the facility where the system resides to detect and respond to physical security incidents;\nb. Review physical access logs [Assignment: frequency] and upon occurrence of [Assignment: events] ; and\nc. Coordinate results of reviews and investigations with the organizational incident response capability.",
+          "category": "Physical and Environmental Protection",
+          "score": 2.3543806076049805
         }
       ],
       "relevant": {
@@ -418,7 +327,7 @@
       "retrieval": {
         "recall": 0.3333333333333333,
         "family_recall": 0.5,
-        "ndcg": 0.4537151203596766
+        "ndcg": 0.5192956693936299
       },
       "answer_quality": {
         "faithfulness": 5,
@@ -427,19 +336,14 @@
       "citations": {
         "grounded": [
           "au-2",
-          "pm-31",
-          "ca-7",
-          "au-16",
+          "au-12",
           "au-6.5",
-          "au-14",
           "ma-4.1",
-          "ca-7.4",
-          "pm-14",
-          "ca-5"
+          "pe-6"
         ],
         "invented": []
       },
-      "answer": "The supplied controls indicate the following policies and policy-related activities that specifically relate to logging and monitoring:\n\n- Define what events the system must log, how often, and why those events are sufficient for investigations (event logging policy elements) — [au-2] (a, c, d, e).  \n- Coordinate event logging requirements with other organizational entities that need audit information — [au-2] (b).  \n- Define organization-wide continuous monitoring strategy and metrics, including monitoring and assessment frequencies, ongoing monitoring, correlation/analysis of monitoring and assessment data, response actions, and reporting of security/privacy status — [pm-31] (a–f).  \n- Define a system-level continuous monitoring strategy aligned to the organization strategy, including system-level metrics, monitoring and assessment frequencies, ongoing assessments and monitoring, correlation/analysis, response actions, and system-level reporting — [ca-7] (a–g).  \n- Specify methods and requirements for coordinating audit information transmitted across organizational boundaries (cross-organizational audit logging policy) — [au-16].  \n- Require integration of audit-record analysis with other data sources (e.g., vulnerability scans, performance, system monitoring, or other assigned sources) to better identify unusual activity — [au-6.5].  \n- Provide session-audit policy elements for when and how user sessions may be recorded or audited, including legal review and compliance with laws and policies — [au-14] (a, b).  \n- Require logging and review of nonlocal maintenance and diagnostic session events and review of those audit records to detect anomalies — [ma-4.1] (a, b).  \n- Include risk monitoring (effectiveness, compliance, change) as an explicit part of the continuous monitoring strategy — [ca-7.4] (a–c).  \n- Ensure testing, training, and monitoring plans are developed, maintained, executed, and reviewed for consistency with risk management and priorities — [pm-14] (a, b).  \n- Tie continuous monitoring findings into the plan of action and milestones process so remediation actions and POA&Ms are developed and updated based on monitoring and assessment results — [ca-5] (a, b).\n\nIf you need the specific organization-defined values (e.g., which event types, which metrics, monitoring/assessment frequencies, reporting recipients, coordination methods), those are assignments in the controls and are not specified in the supplied text. The controls above describe what policies must cover but do not themselves supply the concrete values."
+      "answer": "The supplied controls that relate to logging and monitoring are the following:\n\n- Event logging policy and scope: AU-2 requires identification of what event types the system can log, coordination with other organizational entities to inform selection criteria, specification of which organization-defined event types are to be logged and their logging frequency or triggering situations, rationale for adequacy of those event types for after‑the‑fact investigations, and periodic review/update of the selected event types [au-2].\n\n- Audit record generation and control: AU-12 requires the system to provide audit record generation for the event types identified in AU-2a on specified system components, permit authorized personnel/roles to select which event types are logged by specific components, and generate audit records that include the audit record content defined elsewhere (AU-3) for the AU-2c event types [au-12].\n\n- Integrated analysis of audit records: AU-6.5 requires integrating analysis of audit records with other information sources (e.g., vulnerability scanning, performance data, system monitoring information, or other organization-defined data) to better identify inappropriate or unusual activity [au-6.5].\n\n- Maintenance session logging and review: MA-4.1 requires logging organization-defined audit events for nonlocal maintenance and diagnostic sessions and reviewing those maintenance/diagnostic session audit records to detect anomalous behavior [ma-4.1].\n\n- Physical access monitoring and review: PE-6 requires monitoring physical access to the facility housing the system to detect/respond to physical security incidents, reviewing physical access logs at an organization-defined frequency and upon specified events, and coordinating review/investigation results with the incident response capability [pe-6].\n\nIf you need these mapped into specific policy statements or wording for a security policy document, specify which controls you want turned into policy text and any organization-defined assignments (e.g., event types, frequencies, roles)."
     },
     {
       "query": "What are the requirements for multi-factor authentication?",
@@ -448,8 +352,12 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "multi-factor authentication",
-          "purpose": "Find controls that define MFA requirements across the catalog, including when MFA is required, components, and implementation guidance."
+          "search_query": "multi-factor authentication requirements",
+          "purpose": "Find controls that require or describe multi-factor authentication (MFA) implementations, including when and how MFA must be enforced."
+        },
+        {
+          "search_query": "requirement for authentication using multiple factors or authenticator types",
+          "purpose": "Capture controls that specify exactly which authentication factors or authenticator types must be used, or mandate multiple authenticator mechanisms for privileged or remote access."
         }
       ],
       "retrieved": [
@@ -458,35 +366,49 @@
           "title": "Access to Accounts —separate Device",
           "description": "Implement multi-factor authentication for [Selection (one or more): local; network; remote] access to [Selection (one or more): privileged accounts; non-privileged accounts] such that:\n  (a) One of the factors is provided by a device separate from the system gaining access; and\n  (b) The device meets [Assignment: strength of mechanism requirements].",
           "category": "Identification and Authentication",
-          "score": 2.6805808544158936
+          "score": 2.733751058578491
         },
         {
-          "id": "ia-2.1",
-          "title": "Multi-factor Authentication to Privileged Accounts",
-          "description": "Implement multi-factor authentication for access to privileged accounts.",
+          "id": "ia-5.16",
+          "title": "In-person or Trusted External Party Authenticator Issuance",
+          "description": "Require that the issuance of [Assignment: types of and/or specific authenticators] be conducted [Selection: in person; by a trusted external party] before [Assignment: registration authority] with authorization by [Assignment: personnel or roles].",
           "category": "Identification and Authentication",
-          "score": 2.6444249153137207
+          "score": 2.563606023788452
         },
         {
-          "id": "ia-2.2",
-          "title": "Multi-factor Authentication to Non-privileged Accounts",
-          "description": "Implement multi-factor authentication for access to non-privileged accounts.",
+          "id": "ia-2.5",
+          "title": "Individual Authentication with Group Authentication",
+          "description": "When shared accounts or authenticators are employed, require users to be individually authenticated before granting access to the shared accounts or resources.",
           "category": "Identification and Authentication",
-          "score": 2.617485284805298
+          "score": 2.459569215774536
         },
         {
           "id": "ac-7.4",
           "title": "Use of Alternate Authentication Factor",
           "description": "(a) Allow the use of [Assignment: authentication factors] that are different from the primary authentication factors after the number of organization-defined consecutive invalid logon attempts have been exceeded; and\n(b) Enforce a limit of [Assignment: number] consecutive invalid logon attempts through use of the alternative factors by a user during a [Assignment: time period].",
           "category": "Access Control",
-          "score": 2.4593920707702637
+          "score": 2.457087993621826
         },
         {
-          "id": "ia-8.1",
-          "title": "Acceptance of PIV Credentials from Other Agencies",
-          "description": "Accept and electronically verify Personal Identity Verification-compliant credentials from other federal agencies.",
+          "id": "ia-5.5",
+          "title": "Change Authenticators Prior to Delivery",
+          "description": "Require developers and installers of system components to provide unique authenticators or change default authenticators prior to delivery and installation.",
           "category": "Identification and Authentication",
-          "score": 2.288449287414551
+          "score": 2.397005558013916
+        },
+        {
+          "id": "ia-12.5",
+          "title": "Address Confirmation",
+          "description": "Require that a [Selection: registration code; notice of proofing] be delivered through an out-of-band channel to verify the users address (physical or digital) of record.",
+          "category": "Identification and Authentication",
+          "score": 2.3801681995391846
+        },
+        {
+          "id": "ia-10",
+          "title": "Adaptive Authentication",
+          "description": "Require individuals accessing the system to employ [Assignment: supplemental authentication techniques or mechanisms] under specific [Assignment: circumstances or situations].",
+          "category": "Identification and Authentication",
+          "score": 2.2825119495391846
         }
       ],
       "relevant": {
@@ -496,9 +418,9 @@
         "ia-5": 1
       },
       "retrieval": {
-        "recall": 0.5,
-        "family_recall": 0.5,
-        "ndcg": 0.4820121733126524
+        "recall": 0.0,
+        "family_recall": 1.0,
+        "ndcg": 0.0
       },
       "answer_quality": {
         "faithfulness": 5,
@@ -506,15 +428,17 @@
       },
       "citations": {
         "grounded": [
-          "ia-2.1",
-          "ia-2.2",
           "ia-2.6",
+          "ia-5.16",
+          "ia-2.5",
           "ac-7.4",
-          "ia-8.1"
+          "ia-5.5",
+          "ia-12.5",
+          "ia-10"
         ],
         "invented": []
       },
-      "answer": "The supplied controls require that multi-factor authentication (MFA) be implemented for both privileged and non‑privileged accounts and may have additional device and alternative‑factor requirements:\n\n- MFA must be implemented for privileged accounts [ia-2.1] and for non‑privileged accounts [ia-2.2].\n\n- Where specified for local, network, or remote access to privileged or non‑privileged accounts, MFA must use at least one factor provided by a device separate from the system being accessed, and that device must meet the organization‑assigned “strength of mechanism” requirements [ia-2.6].\n\n- The organization may allow alternative authentication factors after a configurable number of consecutive invalid logon attempts; such use must be limited to an organization‑defined number of consecutive invalid attempts within an organization‑defined time period [ac-7.4].\n\n- If applicable, Personal Identity Verification (PIV) credentials from other federal agencies must be accepted and electronically verified [ia-8.1].\n\nIf you need specifics not provided here (for example, which access types—local, network, remote—are in scope; the exact “strength of mechanism” required for the separate device; or the numeric limits and time periods for alternative-factor use), those details are not included in the supplied controls and must be provided by the organization to fully define the MFA requirements."
+      "answer": "From the supplied controls, the organization’s requirements for multi-factor authentication (MFA) are:\n\n- Implement MFA for the specified access scopes (local/network/remote) and account types (privileged and/or non‑privileged) such that one factor is provided by a device separate from the system being accessed, and that separate device meets the organization’s assigned strength-of-mechanism requirements [ia-2.6].\n\nAdditional supporting and related requirements/considerations in the supplied controls (they do not change the core MFA requirement above, but affect issuance, backup/alternate factors, and special circumstances):\n\n- Authenticators may need to be issued in person or by a trusted external party, with registration authority and authorization by designated personnel or roles, when those authenticator types are subject to that requirement [ia-5.16].\n\n- If shared accounts or shared authenticators are used, each user must be individually authenticated before granting access to the shared account or resource (so MFA must still allow individual authentication prior to use) [ia-2.5].\n\n- The organization may permit use of alternate authentication factors after a defined number of consecutive invalid logon attempts; if allowed, it must enforce an organizationally defined limit on consecutive invalid attempts using those alternate factors during a specified time period [ac-7.4].\n\n- System developers/installers must provide unique authenticators or change default authenticators prior to delivery/installation (to avoid default shared credentials) [ia-5.5].\n\n- Address confirmation for registration must be performed by delivering a registration code or notice of proofing via an out‑of‑band channel to verify the user’s physical or digital address of record (supports secure enrollment for authenticators) [ia-12.5].\n\n- The organization must require supplemental/adaptive authentication techniques under specified circumstances (adaptive authentication) as assigned by the organization [ia-10].\n\nIf you need the exact selections (which access types, which account types, the device strength requirements, allowed alternate factors and their limits, or the specific supplemental techniques and circumstances), those are not specified in the supplied controls and must be provided/assigned by the organization."
     },
     {
       "query": "How should cryptographic keys be established and managed?",
@@ -523,70 +447,45 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "cryptographic key establishment and management",
-          "purpose": "Find controls that describe requirements for establishing, generating, distributing, storing, using, rotating, and retiring cryptographic keys."
-        },
-        {
-          "search_query": "cryptographic key lifecycle",
-          "purpose": "Surface controls that address key lifecycle processes such as key generation, distribution, storage, usage, rotation/revocation, and destruction."
+          "search_query": "cryptographic key management lifecycle, including generation, distribution, storage, use, rotation, and destruction",
+          "purpose": "Find controls that define requirements for establishing and managing cryptographic keys across their lifecycle (generation, distribution, storage/protection, use, rotation/replacement, and secure destruction)."
         }
       ],
       "retrieved": [
         {
-          "id": "sc-12",
-          "title": "Cryptographic Key Establishment and Management",
-          "description": "Establish and manage cryptographic keys when cryptography is employed within the system in accordance with the following key management requirements: [Assignment: requirements].",
+          "id": "sc-12.2",
+          "title": "Symmetric Keys",
+          "description": "Produce, control, and distribute symmetric cryptographic keys using [Selection: NIST FIPS-validated; NSA-approved] key management technology and processes.",
           "category": "System and Communications Protection",
-          "score": 3.15769624710083
+          "score": 2.127653121948242
         },
         {
           "id": "sc-12.3",
           "title": "Asymmetric Keys",
           "description": "Produce, control, and distribute asymmetric cryptographic keys using [Selection: NSA-approved key management technology and processes; prepositioned keying material; DoD-approved or DoD-issued Medium Assurance PKI certificates; DoD-approved or DoD-issued Medium Hardware Assurance PKI certificates and hardware security tokens that protect the user’s private key; certificates issued in accordance with organization-defined requirements].",
           "category": "System and Communications Protection",
-          "score": 2.608978033065796
+          "score": 2.0922505855560303
         },
         {
-          "id": "sc-12.2",
-          "title": "Symmetric Keys",
-          "description": "Produce, control, and distribute symmetric cryptographic keys using [Selection: NIST FIPS-validated; NSA-approved] key management technology and processes.",
+          "id": "sc-12",
+          "title": "Cryptographic Key Establishment and Management",
+          "description": "Establish and manage cryptographic keys when cryptography is employed within the system in accordance with the following key management requirements: [Assignment: requirements].",
           "category": "System and Communications Protection",
-          "score": 2.561479091644287
-        },
-        {
-          "id": "ia-5.14",
-          "title": "Managing Content of PKI Trust Stores",
-          "description": "For PKI-based authentication, employ an organization-wide methodology for managing the content of PKI trust stores installed across all platforms, including networks, operating systems, browsers, and applications.",
-          "category": "Identification and Authentication",
-          "score": 2.5407426357269287
-        },
-        {
-          "id": "sc-28.3",
-          "title": "Cryptographic Keys",
-          "description": "Provide protected storage for cryptographic keys [Selection: [Assignment: safeguards] ; hardware-protected key store].",
-          "category": "System and Communications Protection",
-          "score": 2.5389702320098877
+          "score": 2.042890787124634
         },
         {
           "id": "sa-9.6",
           "title": "Organization-controlled Cryptographic Keys",
           "description": "Maintain exclusive control of cryptographic keys for encrypted material stored or transmitted through an external system.",
           "category": "System and Services Acquisition",
-          "score": 2.164318561553955
+          "score": 2.0071780681610107
         },
         {
-          "id": "sc-12.1",
-          "title": "Availability",
-          "description": "Maintain availability of information in the event of the loss of cryptographic keys by users.",
-          "category": "System and Communications Protection",
-          "score": 2.1314194202423096
-        },
-        {
-          "id": "sc-12.6",
-          "title": "Physical Control of Keys",
-          "description": "Maintain physical control of cryptographic keys when stored information is encrypted by external service providers.",
-          "category": "System and Communications Protection",
-          "score": 2.1066064834594727
+          "id": "ia-13.1",
+          "title": "Protection of Cryptographic Keys",
+          "description": "Cryptographic keys that protect access tokens are generated, managed, and protected from disclosure and misuse.",
+          "category": "Identification and Authentication",
+          "score": 1.9895431995391846
         }
       ],
       "relevant": {
@@ -597,7 +496,7 @@
       "retrieval": {
         "recall": 0.3333333333333333,
         "family_recall": 0.3333333333333333,
-        "ndcg": 0.6387878864795979
+        "ndcg": 0.31939394323979897
       },
       "answer_quality": {
         "faithfulness": 5,
@@ -606,17 +505,14 @@
       "citations": {
         "grounded": [
           "sc-12",
-          "sc-12.1",
           "sc-12.2",
           "sc-12.3",
-          "sc-28.3",
           "sa-9.6",
-          "sc-12.6",
-          "ia-5.14"
+          "ia-13.1"
         ],
         "invented": []
       },
-      "answer": "Use the supplied controls to define key establishment and management as follows.\n\nKey lifecycle and requirements\n- Establish and manage cryptographic keys whenever cryptography is used in the system, in accordance with organization-defined key management requirements [sc-12].  \n- Ensure availability of information if users lose keys (for example, key recovery or escrow) to maintain access to encrypted information [sc-12.1].\n\nKey types and production/distribution methods\n- For symmetric keys, produce, control, and distribute them using selected validated/approved key management technology and processes (for example, NIST FIPS-validated or NSA-approved per the organization’s selection) [sc-12.2].  \n- For asymmetric (public/private) keys, produce, control, and distribute them using the organization’s selected approach (for example NSA-approved key management, prepositioned keying material, or approved/issued PKI certificates and hardware tokens as indicated by organizational selection) [sc-12.3].\n\nStorage and protection of keys\n- Provide protected storage for cryptographic keys, using safeguards as assigned by the organization and/or a hardware-protected key store as selected [sc-28.3].\n\nOrganizational control and third-party use\n- Maintain exclusive organizational control of cryptographic keys for material that is stored or transmitted through external systems (i.e., do not cede key control to the external service) [sa-9.6].  \n- When external service providers store encrypted information on behalf of the organization, ensure the organization maintains physical control of the cryptographic keys used to protect that information [sc-12.6].\n\nPKI trust stores\n- For PKI-based authentication, employ an organization-wide methodology to manage the contents of PKI trust stores across all platforms (networks, OS, browsers, and applications) so trust anchors and revocations are consistently controlled [ia-5.14].\n\nWhat these controls do not specify\n- The supplied controls do not provide the organization-defined specifics named in several selections (for example, the exact key lifetimes, rotation/retirement intervals, specific key recovery/escrow procedures, detailed procedural steps for key generation, exact safeguards for protected storage, or the precise selections among the offered options). Where a control references “[Assignment:]” or “[Selection:]”, the organization must define those concrete requirements and choices [sc-12], [sc-12.2], [sc-12.3], [sc-28.3]."
+      "answer": "Establish and manage cryptographic keys as follows.\n\n- Apply an organization-defined key management scheme for all cryptography used by the system: key generation, distribution, storage, protection, use, rotation, and retirement must follow the organization’s specified requirements [sc-12].\n\n- Use approved technology and processes for symmetric keys: produce, control, and distribute symmetric keys using either NIST FIPS-validated or NSA-approved key management technology and processes as selected by the organization [sc-12.2].\n\n- Use approved mechanisms for asymmetric keys per the organization’s selection: produce, control, and distribute asymmetric keys using the selected method (for example, NSA-approved key management technology and processes; prepositioned keying material; DoD-approved/issued Medium Assurance PKI certificates; DoD-approved/issued Medium Hardware Assurance PKI certificates with hardware security tokens protecting users’ private keys; or certificates issued in accordance with organization-defined requirements) [sc-12.3].\n\n- Maintain exclusive organizational control of keys for material that is stored or transmitted via external systems: the organization must retain exclusive control of those cryptographic keys rather than delegating control to an external system or service [sa-9.6].\n\n- Ensure keys that protect access tokens are generated, managed, and protected from disclosure and misuse: apply appropriate generation, management, and protection measures specifically for keys guarding access tokens [ia-13.1].\n\nIf you need, I can map these requirements into specific operational procedures (key generation, storage media, HSM usage, key rotation intervals, escrow/backup, compromise handling) consistent with the organization-defined requirements referenced above; note those details are not specified in the supplied controls."
     },
     {
       "query": "What controls govern incident response and reporting?",
@@ -625,63 +521,45 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "Incident response policy and planning",
-          "purpose": "Find primary controls that require organizations to establish incident response policies, plans, roles, and procedures (e.g., IR program and planning requirements)."
-        },
-        {
-          "search_query": "Incident handling and reporting requirements",
-          "purpose": "Find controls that specify detection, analysis, incident handling, reporting, and communications (including external reporting and notification) obligations and timelines."
+          "search_query": "incident response and reporting requirements",
+          "purpose": "Find controls that establish incident response capabilities, incident handling procedures, and reporting requirements (including detection, analysis, containment, eradication, recovery, and incident reporting to authorities and stakeholders)."
         }
       ],
       "retrieved": [
-        {
-          "id": "ir-8",
-          "title": "Incident Response Plan",
-          "description": "a. Develop an incident response plan that:\n  1. Provides the organization with a roadmap for implementing its incident response capability;\n  2. Describes the structure and organization of the incident response capability;\n  3. Provides a high-level approach for how the incident response capability fits into the overall organization;\n  4. Meets the unique requirements of the organization, which relate to mission, size, structure, and functions;\n  5. Defines reportable incidents;\n  6. Provides metrics for measuring the incident response capability within the organization;\n  7. Defines the resources and management support needed to effectively maintain and mature an incident response capability;\n  8. Addresses the sharing of incident information;\n  9. Is reviewed and approved by [Assignment: personnel or roles] [Assignment: frequency] ; and\n  10. Explicitly designates responsibility for incident response to [Assignment: entities, personnel, or roles].\nb. Distribute copies of the incident response plan to [Assignment: incident response personnel];\nc. Update the incident response plan to address system and organizational changes or problems encountered during plan implementation, execution, or testing;\nd. Communicate incident response plan changes to [Assignment: organization-defined incident response personnel (identified by name and/or by role) and organizational elements] ; and\ne. Protect the incident response plan from unauthorized disclosure and modification.",
-          "category": "Incident Response",
-          "score": 2.990386724472046
-        },
-        {
-          "id": "ir-4",
-          "title": "Incident Handling",
-          "description": "a. Implement an incident handling capability for incidents that is consistent with the incident response plan and includes preparation, detection and analysis, containment, eradication, and recovery;\nb. Coordinate incident handling activities with contingency planning activities;\nc. Incorporate lessons learned from ongoing incident handling activities into incident response procedures, training, and testing, and implement the resulting changes accordingly; and\nd. Ensure the rigor, intensity, scope, and results of incident handling activities are comparable and predictable across the organization.",
-          "category": "Incident Response",
-          "score": 2.798264503479004
-        },
-        {
-          "id": "ir-1",
-          "title": "Policy and Procedures",
-          "description": "a. Develop, document, and disseminate to [Assignment: organization-defined personnel or roles]:\n  1. [Selection (one or more): organization-level; mission/business process-level; system-level] incident response policy that:\n    (a) Addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance; and\n    (b) Is consistent with applicable laws, executive orders, directives, regulations, policies, standards, and guidelines; and\n  2. Procedures to facilitate the implementation of the incident response policy and the associated incident response controls;\nb. Designate an [Assignment: official] to manage the development, documentation, and dissemination of the incident response policy and procedures; and\nc. Review and update the current incident response:\n  1. Policy [Assignment: frequency] and following [Assignment: events] ; and\n  2. Procedures [Assignment: frequency] and following [Assignment: events].",
-          "category": "Incident Response",
-          "score": 2.776287317276001
-        },
         {
           "id": "ir-6",
           "title": "Incident Reporting",
           "description": "a. Require personnel to report suspected incidents to the organizational incident response capability within [Assignment: time period] ; and\nb. Report incident information to [Assignment: authorities].",
           "category": "Incident Response",
-          "score": 2.6961774826049805
+          "score": 2.964156150817871
+        },
+        {
+          "id": "ir-8",
+          "title": "Incident Response Plan",
+          "description": "a. Develop an incident response plan that:\n  1. Provides the organization with a roadmap for implementing its incident response capability;\n  2. Describes the structure and organization of the incident response capability;\n  3. Provides a high-level approach for how the incident response capability fits into the overall organization;\n  4. Meets the unique requirements of the organization, which relate to mission, size, structure, and functions;\n  5. Defines reportable incidents;\n  6. Provides metrics for measuring the incident response capability within the organization;\n  7. Defines the resources and management support needed to effectively maintain and mature an incident response capability;\n  8. Addresses the sharing of incident information;\n  9. Is reviewed and approved by [Assignment: personnel or roles] [Assignment: frequency] ; and\n  10. Explicitly designates responsibility for incident response to [Assignment: entities, personnel, or roles].\nb. Distribute copies of the incident response plan to [Assignment: incident response personnel];\nc. Update the incident response plan to address system and organizational changes or problems encountered during plan implementation, execution, or testing;\nd. Communicate incident response plan changes to [Assignment: organization-defined incident response personnel (identified by name and/or by role) and organizational elements] ; and\ne. Protect the incident response plan from unauthorized disclosure and modification.",
+          "category": "Incident Response",
+          "score": 2.7160277366638184
         },
         {
           "id": "sa-15.10",
           "title": "Incident Response Plan",
           "description": "Require the developer of the system, system component, or system service to provide, implement, and test an incident response plan.",
           "category": "System and Services Acquisition",
-          "score": 2.6848344802856445
+          "score": 2.6649842262268066
         },
         {
           "id": "ir-8.1",
           "title": "Breaches",
           "description": "Include the following in the Incident Response Plan for breaches involving personally identifiable information:\n  (a) A process to determine if notice to individuals or other organizations, including oversight organizations, is needed;\n  (b) An assessment process to determine the extent of the harm, embarrassment, inconvenience, or unfairness to affected individuals and any mechanisms to mitigate such harms; and\n  (c) Identification of applicable privacy requirements.",
           "category": "Incident Response",
-          "score": 2.6593127250671387
+          "score": 2.4654181003570557
         },
         {
-          "id": "ir-7",
-          "title": "Incident Response Assistance",
-          "description": "Provide an incident response support resource, integral to the organizational incident response capability, that offers advice and assistance to users of the system for the handling and reporting of incidents.",
+          "id": "ir-4",
+          "title": "Incident Handling",
+          "description": "a. Implement an incident handling capability for incidents that is consistent with the incident response plan and includes preparation, detection and analysis, containment, eradication, and recovery;\nb. Coordinate incident handling activities with contingency planning activities;\nc. Incorporate lessons learned from ongoing incident handling activities into incident response procedures, training, and testing, and implement the resulting changes accordingly; and\nd. Ensure the rigor, intensity, scope, and results of incident handling activities are comparable and predictable across the organization.",
           "category": "Incident Response",
-          "score": 2.435288190841675
+          "score": 2.4425547122955322
         }
       ],
       "relevant": {
@@ -693,7 +571,7 @@
       "retrieval": {
         "recall": 0.75,
         "family_recall": 0.75,
-        "ndcg": 0.8786746795305955
+        "ndcg": 0.8599966128179293
       },
       "answer_quality": {
         "faithfulness": 5,
@@ -701,17 +579,15 @@
       },
       "citations": {
         "grounded": [
-          "ir-1",
-          "ir-8",
-          "ir-4",
           "ir-6",
-          "ir-7",
+          "ir-8",
+          "sa-15.10",
           "ir-8.1",
-          "sa-15.10"
+          "ir-4"
         ],
         "invented": []
       },
-      "answer": "The controls governing incident response and reporting in the supplied set are:\n\n- Policy and procedures establishment for incident response: develop, document, disseminate, designate an official to manage them, and review/update regularly [ir-1]. Use this to set scope, roles, responsibilities, management commitment, coordination, compliance, and procedures to implement incident response controls [ir-1].\n\n- Incident response plan content and management: require an incident response plan that provides a roadmap, describes structure/organization, shows how the capability fits into the organization, meets organization-unique requirements, defines reportable incidents, provides metrics, identifies needed resources and management support, addresses incident information sharing, is reviewed/approved, and designates responsibility; distribute the plan to response personnel, update it for system/organizational changes or lessons learned, communicate changes to designated personnel, and protect the plan from unauthorized disclosure/modification [ir-8].\n\n- Incident handling operations: implement an incident handling capability consistent with the incident response plan covering preparation, detection and analysis, containment, eradication, and recovery; coordinate with contingency planning; incorporate lessons learned into procedures, training, and testing; and ensure handling activities are comparable and predictable across the organization [ir-4].\n\n- Reporting requirements and authorities: require personnel to report suspected incidents to the organizational incident response capability within an organization-defined time period, and report incident information to organization-defined authorities [ir-6].\n\n- Incident response assistance resource: provide an incident response support resource that offers advice and assistance to system users for handling and reporting incidents [ir-7].\n\n- Breach-specific requirements for PII: for breaches involving personally identifiable information, require the incident response plan to include processes for determining notice to individuals/organizations, assessing harm and mitigation, and identifying applicable privacy requirements [ir-8.1].\n\n- Acquisition requirement: require system developers/providers to provide, implement, and test an incident response plan for the system or service they deliver [sa-15.10].\n\nIf you need specifics such as the exact reporting time period, the identities of authorities to notify, or the review frequencies, those are not specified in the supplied controls and must be defined by the organization (the controls indicate these are organization-defined assignments) [ir-6], [ir-8], [ir-1]."
+      "answer": "The supplied controls that govern incident response and reporting are:\n\n- Incident Reporting: Require personnel to report suspected incidents to the organizational incident response capability within an organization-defined time period, and to report incident information to organization-defined authorities [ir-6].\n\n- Incident Response Plan (organization-level): Require development of an incident response plan that provides a roadmap and organizational structure for the incident response capability; defines how the capability fits into the organization; tailors the plan to organizational requirements (mission, size, structure, functions); defines reportable incidents; provides metrics; defines required resources and management support; addresses incident information sharing; is reviewed/approved by assigned personnel at an assigned frequency; and explicitly designates responsibility for incident response to specified entities/roles. The plan must be distributed to incident response personnel, updated for system/organizational changes or lessons learned, have changes communicated to identified personnel/elements, and be protected from unauthorized disclosure and modification [ir-8].\n\n- Incident Response Plan (system acquisition): Require system or service developers to provide, implement, and test an incident response plan for the system, component, or service [sa-15.10].\n\n- Breach-specific additions: For breaches involving personally identifiable information, the incident response plan must include a process to determine whether notices to individuals or organizations are needed; an assessment process to determine harm and mitigation mechanisms; and identification of applicable privacy requirements [ir-8.1].\n\n- Incident Handling: Implement an incident handling capability consistent with the incident response plan that covers preparation, detection and analysis, containment, eradication, and recovery; coordinate incident handling with contingency planning; incorporate lessons learned into procedures, training, and testing; and ensure incident handling rigor, intensity, scope, and results are comparable and predictable across the organization [ir-4].\n\nIf you need, I can map these controls to specific reporting timeframes, authorities, or roles—however, those values must be provided (they are organization-defined and assigned in the controls above)."
     },
     {
       "query": "What are the requirements for security awareness and role-based training?",
@@ -720,12 +596,12 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "AT-2 Security Awareness Training",
-          "purpose": "Find the control(s) that specify general security awareness training requirements for all users and personnel."
+          "search_query": "security awareness and training program requirements for all users and roles",
+          "purpose": "Find the base control statements requiring organizations to implement security awareness programs for all personnel and specific training for roles."
         },
         {
-          "search_query": "AT-3 Role-Based Security Training",
-          "purpose": "Find the control(s) that specify role-based and specialized security training requirements tied to specific duties or positions."
+          "search_query": "role-based security training requirements and content tailored to job responsibilities",
+          "purpose": "Find control statements that require role-specific training, including frequency, content, and training for privileged or specialized roles."
         }
       ],
       "retrieved": [
@@ -734,63 +610,49 @@
           "title": "Role-based Training",
           "description": "a. Provide role-based security and privacy training to personnel with the following roles and responsibilities: [Assignment: organization-defined roles and responsibilities]:\n  1. Before authorizing access to the system, information, or performing assigned duties, and [Assignment: frequency] thereafter; and\n  2. When required by system changes;\nb. Update role-based training content [Assignment: frequency] and following [Assignment: events] ; and\nc. Incorporate lessons learned from internal or external security incidents or breaches into role-based training.",
           "category": "Awareness and Training",
-          "score": 2.4067533016204834
-        },
-        {
-          "id": "sa-16",
-          "title": "Developer-provided Training",
-          "description": "Require the developer of the system, system component, or system service to provide the following training on the correct use and operation of the implemented security and privacy functions, controls, and/or mechanisms: [Assignment: training].",
-          "category": "System and Services Acquisition",
-          "score": 2.28375244140625
-        },
-        {
-          "id": "at-4",
-          "title": "Training Records",
-          "description": "a. Document and monitor information security and privacy training activities, including security and privacy awareness training and specific role-based security and privacy training; and\nb. Retain individual training records for [Assignment: time period].",
-          "category": "Awareness and Training",
-          "score": 2.2587623596191406
+          "score": 2.8344204425811768
         },
         {
           "id": "at-3.2",
           "title": "Physical Security Controls",
           "description": "Provide [Assignment: personnel or roles] with initial and [Assignment: frequency] training in the employment and operation of physical security controls.",
           "category": "Awareness and Training",
-          "score": 2.19366192817688
+          "score": 2.4498212337493896
         },
         {
-          "id": "at-2.4",
-          "title": "Suspicious Communications and Anomalous System Behavior",
-          "description": "Provide literacy training on recognizing suspicious communications and anomalous behavior in organizational systems using [Assignment: indicators of malicious code].",
-          "category": "Awareness and Training",
-          "score": 2.1820919513702393
-        },
-        {
-          "id": "at-3.3",
-          "title": "Practical Exercises",
-          "description": "Provide practical exercises in security and privacy training that reinforce training objectives.",
-          "category": "Awareness and Training",
-          "score": 2.1804137229919434
-        },
-        {
-          "id": "sr-11.1",
-          "title": "Anti-counterfeit Training",
-          "description": "Train [Assignment: personnel or roles] to detect counterfeit system components (including hardware, software, and firmware).",
-          "category": "Supply Chain Risk Management",
-          "score": 2.179192543029785
+          "id": "sa-16",
+          "title": "Developer-provided Training",
+          "description": "Require the developer of the system, system component, or system service to provide the following training on the correct use and operation of the implemented security and privacy functions, controls, and/or mechanisms: [Assignment: training].",
+          "category": "System and Services Acquisition",
+          "score": 2.3858397006988525
         },
         {
           "id": "at-2",
           "title": "Literacy Training and Awareness",
           "description": "a. Provide security and privacy literacy training to system users (including managers, senior executives, and contractors):\n  1. As part of initial training for new users and [Assignment: organization-defined frequency] thereafter; and\n  2. When required by system changes or following [Assignment: organization-defined events];\nb. Employ the following techniques to increase the security and privacy awareness of system users [Assignment: awareness techniques];\nc. Update literacy training and awareness content [Assignment: frequency] and following [Assignment: events] ; and\nd. Incorporate lessons learned from internal or external security incidents or breaches into literacy training and awareness techniques.",
           "category": "Awareness and Training",
-          "score": 2.142319440841675
+          "score": 2.385662317276001
         },
         {
-          "id": "pe-2.1",
-          "title": "Access by Position or Role",
-          "description": "Authorize physical access to the facility where the system resides based on position or role.",
-          "category": "Physical and Environmental Protection",
-          "score": 2.0278258323669434
+          "id": "at-1",
+          "title": "Policy and Procedures",
+          "description": "a. Develop, document, and disseminate to [Assignment: organization-defined personnel or roles]:\n  1. [Selection (one or more): organization-level; mission/business process-level; system-level] awareness and training policy that:\n    (a) Addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance; and\n    (b) Is consistent with applicable laws, executive orders, directives, regulations, policies, standards, and guidelines; and\n  2. Procedures to facilitate the implementation of the awareness and training policy and the associated awareness and training controls;\nb. Designate an [Assignment: official] to manage the development, documentation, and dissemination of the awareness and training policy and procedures; and\nc. Review and update the current awareness and training:\n  1. Policy [Assignment: frequency] and following [Assignment: events] ; and\n  2. Procedures [Assignment: frequency] and following [Assignment: events].",
+          "category": "Awareness and Training",
+          "score": 2.3016531467437744
+        },
+        {
+          "id": "at-4",
+          "title": "Training Records",
+          "description": "a. Document and monitor information security and privacy training activities, including security and privacy awareness training and specific role-based security and privacy training; and\nb. Retain individual training records for [Assignment: time period].",
+          "category": "Awareness and Training",
+          "score": 2.2005631923675537
+        },
+        {
+          "id": "pm-14",
+          "title": "Testing, Training, and Monitoring",
+          "description": "a. Implement a process for ensuring that organizational plans for conducting security and privacy testing, training, and monitoring activities associated with organizational systems:\n  1. Are developed and maintained; and\n  2. Continue to be executed; and\nb. Review testing, training, and monitoring plans for consistency with the organizational risk management strategy and organization-wide priorities for risk response actions.",
+          "category": "Program Management",
+          "score": 2.05130934715271
         }
       ],
       "relevant": {
@@ -801,7 +663,7 @@
       "retrieval": {
         "recall": 1.0,
         "family_recall": 1.0,
-        "ndcg": 0.6645649565734895
+        "ndcg": 0.7606220037494031
       },
       "answer_quality": {
         "faithfulness": 5,
@@ -809,16 +671,17 @@
       },
       "citations": {
         "grounded": [
-          "sa-16",
+          "at-1",
+          "at-2",
+          "at-3",
           "at-3.2",
-          "at-2.4",
-          "at-3.3",
-          "sr-11.1",
-          "pe-2.1"
+          "sa-16",
+          "at-4",
+          "pm-14"
         ],
         "invented": []
       },
-      "answer": "Requirements for security awareness and role‑based training based on the supplied controls:\n\n- Provide role‑based training to personnel in organization‑defined roles and responsibilities. This training must be delivered before those personnel are authorized to access the system, information, or perform assigned duties, and again at an organization‑defined recurring frequency; it must also be provided when required by system changes [at-3 a.1–a.2].\n\n- Maintain a process to update role‑based training content at an organization‑defined frequency and following organization‑defined events, and incorporate lessons learned from internal or external security incidents or breaches into role‑based training [at-3 b–c].\n\n- Ensure developers of systems, components, or services provide training on correct use and operation of implemented security and privacy functions, controls, and mechanisms (the specific training is organization‑defined) [sa-16].\n\n- Document and monitor all information security and privacy training activities, including awareness and role‑based training, and retain individual training records for an organization‑defined time period [at-4 a–b].\n\n- Provide initial and recurring (organization‑defined frequency) training in the employment and operation of physical security controls to designated personnel or roles [at-3.2].\n\n- Include literacy training for users (managers, senior executives, contractors) as part of initial onboarding and at an organization‑defined recurring frequency thereafter, and when required by system changes or specified events; employ organization‑defined awareness techniques, update literacy/awareness content at an organization‑defined frequency and after specified events, and incorporate lessons learned from incidents into literacy training [at-2 a–d].\n\n- Provide literacy training focused on recognizing suspicious communications and anomalous system behavior using organization‑defined indicators of malicious code [at-2.4].\n\n- Include practical exercises in security and privacy training to reinforce objectives [at-3.3].\n\n- Train supply‑chain or other designated personnel/roles to detect counterfeit system components (hardware, software, firmware) where applicable [sr-11.1].\n\n- For physical access, authorize facility access based on position or role (this supports role‑based physical access training and authorization) [pe-2.1].\n\nIf you need the specific organization‑defined frequencies, events, roles, record retention periods, awareness techniques, or developer training content, those values are not defined in the supplied controls and must be provided by your organization to fully implement these requirements."
+      "answer": "The supplied controls require an organizational program that establishes policies, procedures, defined roles, and records for both general security/privacy literacy and role‑based training, plus developer‑provided and physical security training. Key requirements derived from the supplied controls are:\n\n- Policy, procedures, and governance:\n  - Develop, document, and disseminate an awareness and training policy (organization-, mission-/process-, or system-level as selected) that covers purpose, scope, roles, responsibilities, management commitment, coordination, and compliance and is consistent with applicable authorities. Also provide procedures to implement the policy. Designate an official to manage policy/procedure development and dissemination. Review and update the policy and procedures at organization‑defined frequencies and after organization‑defined events [at-1].\n\n- Literacy (general awareness) training:\n  - Provide security and privacy literacy training to all system users (including managers, senior executives, and contractors) as part of initial onboarding and at an organization‑defined recurring frequency thereafter; also provide literacy training when required by system changes or after organization‑defined events. Use organization‑defined awareness techniques to increase awareness. Update literacy training and awareness content at organization‑defined frequencies and following organization‑defined events. Incorporate lessons learned from internal or external incidents or breaches into literacy training and awareness techniques [at-2].\n\n- Role-based training:\n  - Provide role‑based security and privacy training to personnel in organization‑defined roles and responsibilities before they are authorized to access systems/information or perform duties, and at an organization‑defined recurring frequency thereafter; and provide role‑based training when required by system changes. Update role‑based training content at organization‑defined frequencies and after organization‑defined events. Incorporate lessons learned from internal or external incidents or breaches into role‑based training [at-3].\n\n- Physical security training:\n  - Provide identified personnel or roles with initial and organization‑defined recurring training on the employment and operation of physical security controls [at-3.2].\n\n- Developer‑provided training:\n  - Require system/system component/service developers to provide specified training on correct use and operation of implemented security and privacy functions, controls, and mechanisms (training content to be assigned by the organization) [sa-16].\n\n- Records, retention, and monitoring:\n  - Document and monitor security and privacy training activities (both awareness and role‑based) and retain individual training records for an organization‑defined time period [at-4].\n\n- Planning and alignment:\n  - Implement and maintain a process to ensure organizational plans for security/privacy testing, training, and monitoring are developed, maintained, and executed; and review those plans for consistency with the organization’s risk management strategy and priorities for risk response [pm-14].\n\nIf you need specifics (e.g., the exact training frequency, which roles are covered, record retention periods, or which awareness techniques to use), those items are left as organization-defined assignments in the supplied controls and are not specified by the provided text."
     },
     {
       "query": "How should removable media and portable storage devices be controlled?",
@@ -827,45 +690,45 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "Removable media and portable storage device controls",
-          "purpose": "Find NIST SP 800-53 Rev 5 controls that specify requirements for managing, restricting, sanitizing, and auditing removable media and portable storage devices."
+          "search_query": "Removable media and portable storage device controls for protection, labeling, access, and sanitization",
+          "purpose": "Find controls that specify how organizations must protect, restrict, label, scan, and sanitize removable media and portable storage devices, including handling, encryption, and disposal requirements."
         }
       ],
       "retrieved": [
-        {
-          "id": "mp-7",
-          "title": "Media Use",
-          "description": "a. [Selection: restrict; prohibit] the use of [Assignment: types of system media] on [Assignment: systems or system components] using [Assignment: controls] ; and\nb. Prohibit the use of portable storage devices in organizational systems when such devices have no identifiable owner.",
-          "category": "Media Protection",
-          "score": 2.2659404277801514
-        },
         {
           "id": "mp-4",
           "title": "Media Storage",
           "description": "a. Physically control and securely store [Assignment: organization-defined types of digital and/or non-digital media] within [Assignment: organization-defined controlled areas] ; and\nb. Protect system media types defined in MP-4a until the media are destroyed or sanitized using approved equipment, techniques, and procedures.",
           "category": "Media Protection",
-          "score": 2.232132911682129
+          "score": 2.3798136711120605
         },
         {
-          "id": "ac-20.2",
-          "title": "Portable Storage Devices — Restricted Use",
-          "description": "Restrict the use of organization-controlled portable storage devices by authorized individuals on external systems using [Assignment: restrictions].",
+          "id": "ac-19.5",
+          "title": "Full Device or Container-based Encryption",
+          "description": "Employ [Selection: full-device encryption; container-based encryption] to protect the confidentiality and integrity of information on [Assignment: mobile devices].",
           "category": "Access Control",
-          "score": 2.1950135231018066
+          "score": 2.18564772605896
         },
         {
           "id": "mp-6.3",
           "title": "Nondestructive Techniques",
           "description": "Apply nondestructive sanitization techniques to portable storage devices prior to connecting such devices to the system under the following circumstances: [Assignment: circumstances].",
           "category": "Media Protection",
-          "score": 2.123399496078491
+          "score": 2.161527156829834
         },
         {
-          "id": "mp-4.2",
-          "title": "Automated Restricted Access",
-          "description": "Restrict access to media storage areas and log access attempts and access granted using [Assignment: organization-defined automated mechanisms].",
+          "id": "mp-7",
+          "title": "Media Use",
+          "description": "a. [Selection: restrict; prohibit] the use of [Assignment: types of system media] on [Assignment: systems or system components] using [Assignment: controls] ; and\nb. Prohibit the use of portable storage devices in organizational systems when such devices have no identifiable owner.",
           "category": "Media Protection",
-          "score": 2.0854270458221436
+          "score": 2.1268112659454346
+        },
+        {
+          "id": "mp-6",
+          "title": "Media Sanitization",
+          "description": "a. Sanitize [Assignment: organization-defined system media] prior to disposal, release out of organizational control, or release for reuse using [Assignment: organization-defined sanitization techniques and procedures] ; and\nb. Employ sanitization mechanisms with the strength and integrity commensurate with the security category or classification of the information.",
+          "category": "Media Protection",
+          "score": 2.110062599182129
         }
       ],
       "relevant": {
@@ -877,7 +740,7 @@
       "retrieval": {
         "recall": 0.5,
         "family_recall": 0.5,
-        "ndcg": 0.6275270415439392
+        "ndcg": 0.4439683015704129
       },
       "answer_quality": {
         "faithfulness": 5,
@@ -885,13 +748,15 @@
       },
       "citations": {
         "grounded": [
-          "mp-4.2",
-          "ac-20.2",
-          "mp-6.3"
+          "mp-4",
+          "mp-6",
+          "mp-6.3",
+          "mp-7",
+          "ac-19.5"
         ],
         "invented": []
       },
-      "answer": "Control of removable media and portable storage devices should be accomplished using the organization’s media protection and access-control measures described by the supplied controls.\n\n- Restrict or prohibit types of media on specific systems. Apply an organizational policy that either restricts or prohibits use of particular system media on defined systems or components and implement the specified controls for that restriction/prohibition [mp-7a]. Also prohibit portable storage devices that do not have an identifiable owner from being used on organizational systems [mp-7b].\n\n- Physically control and securely store defined types of digital and non-digital media in organization-defined controlled areas, and protect those media until they are destroyed or sanitized using approved equipment, techniques, and procedures [mp-4a, mp-4b]. Ensure storage-area access is restricted and that access attempts and grants are logged using organization-defined automated mechanisms [mp-4.2].\n\n- Limit use of organization-controlled portable storage devices on external systems by authorized individuals and enforce the organization’s specified restrictions on such use [ac-20.2].\n\n- Before connecting portable storage devices to systems, apply nondestructive sanitization techniques under the circumstances the organization defines (for example, when devices originate from external sources or cannot be verified) so that devices are sanitized as required prior to connection [mp-6.3].\n\nIf you need operational details (for example, specific sanitization methods, exact types of media to restrict or prohibit, or the particular automated mechanisms to use for logging access), those are not provided in the supplied controls; the controls only specify that such selections, restrictions, locations, mechanisms, and circumstances be defined and implemented by the organization [mp-7a, mp-4a, mp-4b, mp-4.2, ac-20.2, mp-6.3]."
+      "answer": "Control of removable media and portable storage devices should follow the organization-defined requirements in these controls.\n\n- Physically control and securely store media types defined by the organization within organization-defined controlled areas, and protect those media until they are destroyed or sanitized using approved equipment, techniques, and procedures [mp-4].\n\n- Sanitize organization-defined system media (including portable devices when applicable) prior to disposal, release out of organizational control, or release for reuse using organization-defined sanitization techniques and procedures; use sanitization mechanisms whose strength and integrity match the security category or classification of the information on the media [mp-6].\n\n- For portable storage devices that will be connected to systems, apply nondestructive sanitization techniques prior to connection under the organization-defined circumstances (e.g., before introduction to sensitive environments) [mp-6.3].\n\n- Restrict or prohibit the use of specified types of system media on specified systems or components using organization-defined controls; additionally, prohibit use of portable storage devices on organizational systems when such devices have no identifiable owner [mp-7].\n\n- Employ full-device or container-based encryption (as selected by the organization) to protect the confidentiality and integrity of information on mobile devices [ac-19.5].\n\nIf you need specifics (what media types, which controlled areas, what sanitization techniques, what circumstances for nondestructive sanitization, or whether to select full-device vs container-based encryption and which use restrictions to apply), those are not specified in the supplied controls and must be defined by the organization per the placeholders in the controls."
     },
     {
       "query": "What controls address vulnerability scanning and flaw remediation?",
@@ -900,12 +765,12 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "vulnerability scanning",
-          "purpose": "Find controls that require or describe vulnerability scanning activities, including discovery, scanning frequency, and reporting."
+          "search_query": "vulnerability scanning and automated vulnerability scanning",
+          "purpose": "Find controls that require performing vulnerability scanning (automated or manual) of systems and components to identify vulnerabilities."
         },
         {
-          "search_query": "flaw remediation",
-          "purpose": "Find controls that require tracking, prioritizing, and remediating identified vulnerabilities and software flaws, including patching and remediation timelines."
+          "search_query": "flaw remediation and vulnerability remediation processes",
+          "purpose": "Find controls that mandate tracking, reporting, and remediating identified flaws and vulnerabilities (patching, configuration changes, mitigation, and timelines for remediation)."
         }
       ],
       "retrieved": [
@@ -914,70 +779,63 @@
           "title": "Vulnerability Monitoring and Scanning",
           "description": "a. Monitor and scan for vulnerabilities in the system and hosted applications [Assignment: organization-defined frequency and/or randomly in accordance with organization-defined process] and when new vulnerabilities potentially affecting the system are identified and reported;\nb. Employ vulnerability monitoring tools and techniques that facilitate interoperability among tools and automate parts of the vulnerability management process by using standards for:\n  1. Enumerating platforms, software flaws, and improper configurations;\n  2. Formatting checklists and test procedures; and\n  3. Measuring vulnerability impact;\nc. Analyze vulnerability scan reports and results from vulnerability monitoring;\nd. Remediate legitimate vulnerabilities [Assignment: response times] in accordance with an organizational assessment of risk;\ne. Share information obtained from the vulnerability monitoring process and control assessments with [Assignment: personnel or roles] to help eliminate similar vulnerabilities in other systems; and\nf. Employ vulnerability monitoring tools that include the capability to readily update the vulnerabilities to be scanned.",
           "category": "Risk Assessment",
-          "score": 3.1179957389831543
+          "score": 2.958484649658203
         },
         {
           "id": "si-2",
           "title": "Flaw Remediation",
           "description": "a. Identify, report, and correct system flaws;\nb. Test software and firmware updates related to flaw remediation for effectiveness and potential side effects before installation;\nc. Install security-relevant software and firmware updates within [Assignment: time period] of the release of the updates; and\nd. Incorporate flaw remediation into the organizational configuration management process.",
           "category": "System and Information Integrity",
-          "score": 3.0492286682128906
+          "score": 2.779123067855835
         },
         {
-          "id": "si-2.3",
-          "title": "Time to Remediate Flaws and Benchmarks for Corrective Actions",
-          "description": "(a) Measure the time between flaw identification and flaw remediation; and\n(b) Establish the following benchmarks for taking corrective actions: [Assignment: benchmarks].",
-          "category": "System and Information Integrity",
-          "score": 2.7124829292297363
-        },
-        {
-          "id": "au-6.5",
-          "title": "Integrated Analysis of Audit Records",
-          "description": "Integrate analysis of audit records with analysis of [Selection (one or more): vulnerability scanning information; performance data; system monitoring information; [Assignment: data/information collected from other sources] ] to further enhance the ability to identify inappropriate or unusual activity.",
-          "category": "Audit and Accountability",
-          "score": 2.6422979831695557
+          "id": "sa-15.7",
+          "title": "Automated Vulnerability Analysis",
+          "description": "Require the developer of the system, system component, or system service [Assignment: frequency] to:\n  (a) Perform an automated vulnerability analysis using [Assignment: tools];\n  (b) Determine the exploitation potential for discovered vulnerabilities;\n  (c) Determine potential risk mitigations for delivered vulnerabilities; and\n  (d) Deliver the outputs of the tools and results of the analysis to [Assignment: personnel or roles].",
+          "category": "System and Services Acquisition",
+          "score": 2.75289249420166
         },
         {
           "id": "ca-2.2",
           "title": "Specialized Assessments",
           "description": "Include as part of control assessments, [Assignment: specialized assessment frequency], [Selection: announced; unannounced], [Selection (one or more): in-depth monitoring; security instrumentation; automated security test cases; vulnerability scanning; malicious user testing; insider threat assessment; performance and load testing; data leakage or data loss assessment; [Assignment: other forms of assessment] ].",
           "category": "Assessment, Authorization, and Monitoring",
-          "score": 2.56927752494812
-        },
-        {
-          "id": "sa-11",
-          "title": "Developer Testing and Evaluation",
-          "description": "Require the developer of the system, system component, or system service, at all post-design stages of the system development life cycle, to:\n  a. Develop and implement a plan for ongoing security and privacy control assessments;\n  b. Perform [Selection (one or more): unit; integration; system; regression] testing/evaluation [Assignment: frequency to conduct] at [Assignment: depth and coverage];\n  c. Produce evidence of the execution of the assessment plan and the results of the testing and evaluation;\n  d. Implement a verifiable flaw remediation process; and\n  e. Correct flaws identified during testing and evaluation.",
-          "category": "System and Services Acquisition",
-          "score": 2.559352397918701
-        },
-        {
-          "id": "ra-5.2",
-          "title": "Update Vulnerabilities to Be Scanned",
-          "description": "Update the system vulnerabilities to be scanned [Selection (one or more): [Assignment: frequency] ; prior to a new scan; when new vulnerabilities are identified and reported].",
-          "category": "Risk Assessment",
-          "score": 2.509903907775879
-        },
-        {
-          "id": "ra-5.10",
-          "title": "Correlate Scanning Information",
-          "description": "Correlate the output from vulnerability scanning tools to determine the presence of multi-vulnerability and multi-hop attack vectors.",
-          "category": "Risk Assessment",
-          "score": 2.4987380504608154
-        },
-        {
-          "id": "si-2.4",
-          "title": "Automated Patch Management Tools",
-          "description": "Employ automated patch management tools to facilitate flaw remediation to the following system components: [Assignment: components].",
-          "category": "System and Information Integrity",
-          "score": 2.4508848190307617
+          "score": 2.5253233909606934
         },
         {
           "id": "si-3.10",
           "title": "Malicious Code Analysis",
           "description": "(a) Employ the following tools and techniques to analyze the characteristics and behavior of malicious code: [Assignment: tools and techniques] ; and\n(b) Incorporate the results from malicious code analysis into organizational incident response and flaw remediation processes.",
           "category": "System and Information Integrity",
-          "score": 2.4216411113739014
+          "score": 2.5143346786499023
+        },
+        {
+          "id": "sa-11",
+          "title": "Developer Testing and Evaluation",
+          "description": "Require the developer of the system, system component, or system service, at all post-design stages of the system development life cycle, to:\n  a. Develop and implement a plan for ongoing security and privacy control assessments;\n  b. Perform [Selection (one or more): unit; integration; system; regression] testing/evaluation [Assignment: frequency to conduct] at [Assignment: depth and coverage];\n  c. Produce evidence of the execution of the assessment plan and the results of the testing and evaluation;\n  d. Implement a verifiable flaw remediation process; and\n  e. Correct flaws identified during testing and evaluation.",
+          "category": "System and Services Acquisition",
+          "score": 2.4462766647338867
+        },
+        {
+          "id": "si-2.4",
+          "title": "Automated Patch Management Tools",
+          "description": "Employ automated patch management tools to facilitate flaw remediation to the following system components: [Assignment: components].",
+          "category": "System and Information Integrity",
+          "score": 2.440782308578491
+        },
+        {
+          "id": "ra-5.6",
+          "title": "Automated Trend Analyses",
+          "description": "Compare the results of multiple vulnerability scans using [Assignment: automated mechanisms].",
+          "category": "Risk Assessment",
+          "score": 2.430325508117676
+        },
+        {
+          "id": "si-4.3",
+          "title": "Automated Tool and Mechanism Integration",
+          "description": "Employ automated tools and mechanisms to integrate intrusion detection tools and mechanisms into access control and flow control mechanisms.",
+          "category": "System and Information Integrity",
+          "score": 2.4124248027801514
         }
       ],
       "relevant": {
@@ -997,18 +855,18 @@
       "citations": {
         "grounded": [
           "ra-5",
-          "ra-5.2",
-          "ra-5.10",
-          "au-6.5",
+          "ra-5.6",
           "si-2",
-          "si-2.3",
           "si-2.4",
+          "sa-15.7",
           "sa-11",
-          "si-3.10"
+          "ca-2.2",
+          "si-3.10",
+          "si-4.3"
         ],
         "invented": []
       },
-      "answer": "The supplied controls that address vulnerability scanning and flaw remediation are:\n\n- Vulnerability scanning and monitoring: [ra-5] (Vulnerability Monitoring and Scanning) requires monitoring and scanning for vulnerabilities on a defined frequency or when new vulnerabilities are reported, using interoperable tools and standards for enumerating platforms/flaws/configurations, formatting checklists/test procedures, and measuring impact; analyzing scan reports; updating scanned vulnerabilities capability; and sharing results [ra-5] and the related update requirement [ra-5.2] (Update Vulnerabilities to Be Scanned) which specifies when vulnerabilities to be scanned are updated.\n\n- Correlation and analysis of scan output: [ra-5.10] (Correlate Scanning Information) requires correlating vulnerability scan outputs to detect multi-vulnerability and multi-hop attack vectors; and [au-6.5] (Integrated Analysis of Audit Records) supports integrating vulnerability scanning information with audit/monitoring data for enhanced detection.\n\n- Flaw remediation (identification through implementation and timelines): [si-2] (Flaw Remediation) requires identifying, reporting, correcting system flaws; testing updates for effectiveness and side effects before installation; installing security-relevant updates within an organizational time period; and incorporating flaw remediation into configuration management. Timing metrics and benchmarks for remediation are specified by [si-2.3] (Time to Remediate Flaws and Benchmarks for Corrective Actions), which requires measuring time from identification to remediation and establishing benchmarks.\n\n- Automation and tools to assist remediation: [si-2.4] (Automated Patch Management Tools) requires employing automated patch management tools to facilitate remediation for specified components.\n\n- Developer responsibilities and integrating remediation into lifecycle testing: [sa-11] (Developer Testing and Evaluation) requires developers to implement ongoing security testing, provide evidence, implement a verifiable flaw remediation process, and correct flaws identified during testing.\n\n- Incorporation into incident response when malicious code is involved: [si-3.10] (Malicious Code Analysis) requires using analysis tools/techniques for malicious code and incorporating those results into incident response and flaw remediation processes.\n\nIf you need a concise mapping (scan vs. remediate): use [ra-5], [ra-5.2], [ra-5.10], [au-6.5] for scanning/analysis; use [si-2], [si-2.3], [si-2.4], [sa-11], and [si-3.10] for remediation and integration into processes."
+      "answer": "The supplied controls that address vulnerability scanning and flaw remediation are:\n\n- Vulnerability scanning and monitoring: [ra-5] (Vulnerability Monitoring and Scanning) — specifies monitoring and scanning frequency, use of vulnerability monitoring tools that support enumeration/formatting/impact measurement, analysis of scan reports, updating vulnerability definitions, and sharing scan information [ra-5] (and tool interoperability/automation details in [ra-5]b and update capability in [ra-5]f). Automated comparison of scan results is covered by [ra-5.6] (Automated Trend Analyses) which directs comparing results of multiple scans using automated mechanisms [ra-5.6].\n\n- Flaw remediation (patching and corrections): [si-2] (Flaw Remediation) — requires identification, reporting, correction of system flaws; testing updates before installation; timely installation of security-relevant updates per an organization-defined timeframe; and incorporation of flaw remediation into configuration management [si-2]. Automated support for remediation is addressed by [si-2.4] (Automated Patch Management Tools), which mandates employing automated patch management tools for specified components [si-2.4].\n\n- Developer-side vulnerability analysis and remediation integration: [sa-15.7] (Automated Vulnerability Analysis) — requires developers to perform automated vulnerability analyses, assess exploitability, determine mitigations, and deliver results to appropriate personnel [sa-15.7]. [sa-11] (Developer Testing and Evaluation) requires developers to implement testing/evaluation, produce evidence, implement a verifiable flaw remediation process, and correct discovered flaws (thus addressing remediation processes during development) [sa-11].\n\n- Assessment inclusion and specialized scanning: [ca-2.2] (Specialized Assessments) — includes vulnerability scanning as a selectable specialized assessment type to be performed (announced or unannounced, at organization-defined frequency) as part of control assessments [ca-2.2].\n\n- Malicious code and incident integration: [si-3.10] (Malicious Code Analysis) — calls for analysis tools/techniques for malicious code and incorporation of those results into incident response and flaw remediation processes (supporting remediation decisions) [si-3.10].\n\n- Tool integration (supporting scanning/remediation workflows): [si-4.3] (Automated Tool and Mechanism Integration) — requires employing automated tools/mechanisms to integrate detection tools into control mechanisms, supporting automated detection/remediation workflows [si-4.3].\n\nIf you need a concise mapping (e.g., which to implement first or which cover scanning vs. patching), tell me and I’ll summarize accordingly. If you require controls beyond these, the supplied set does not cover them."
     },
     {
       "query": "What are the contingency planning and system backup requirements?",
@@ -1017,84 +875,77 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "Contingency planning",
-          "purpose": "Find controls that define requirements for contingency planning, including contingency planning policy, plan development, testing, and maintenance."
+          "search_query": "Contingency planning and system backup requirements for information systems",
+          "purpose": "Find NIST SP 800-53 Rev. 5 controls describing contingency planning, continuity of operations, and backup/restore requirements for systems and data."
         },
         {
-          "search_query": "System and information backup",
-          "purpose": "Find controls that specify requirements for system and information backups, backup frequency, protection, storage, and restoration."
+          "search_query": "CP family contingency plan development, backup, and recovery",
+          "purpose": "Locate specific CP controls and enhancements that define contingency plan content, backup frequency, storage, protection, and testing for system recovery."
         }
       ],
       "retrieved": [
-        {
-          "id": "cp-2",
-          "title": "Contingency Plan",
-          "description": "a. Develop a contingency plan for the system that:\n  1. Identifies essential mission and business functions and associated contingency requirements;\n  2. Provides recovery objectives, restoration priorities, and metrics;\n  3. Addresses contingency roles, responsibilities, assigned individuals with contact information;\n  4. Addresses maintaining essential mission and business functions despite a system disruption, compromise, or failure;\n  5. Addresses eventual, full system restoration without deterioration of the controls originally planned and implemented;\n  6. Addresses the sharing of contingency information; and\n  7. Is reviewed and approved by [Assignment: organization-defined personnel or roles];\nb. Distribute copies of the contingency plan to [Assignment: organization-defined key contingency personnel (identified by name and/or by role) and organizational elements];\nc. Coordinate contingency planning activities with incident handling activities;\nd. Review the contingency plan for the system [Assignment: frequency];\ne. Update the contingency plan to address changes to the organization, system, or environment of operation and problems encountered during contingency plan implementation, execution, or testing;\nf. Communicate contingency plan changes to [Assignment: organization-defined key contingency personnel (identified by name and/or by role) and organizational elements];\ng. Incorporate lessons learned from contingency plan testing, training, or actual contingency activities into contingency testing and training; and\nh. Protect the contingency plan from unauthorized disclosure and modification.",
-          "category": "Contingency Planning",
-          "score": 3.4285106658935547
-        },
-        {
-          "id": "cp-8.4",
-          "title": "Provider Contingency Plan",
-          "description": "(a) Require primary and alternate telecommunications service providers to have contingency plans;\n(b) Review provider contingency plans to ensure that the plans meet organizational contingency requirements; and\n(c) Obtain evidence of contingency testing and training by providers [Assignment: organization-defined frequency].",
-          "category": "Contingency Planning",
-          "score": 2.993931531906128
-        },
-        {
-          "id": "cp-3.1",
-          "title": "Simulated Events",
-          "description": "Incorporate simulated events into contingency training to facilitate effective response by personnel in crisis situations.",
-          "category": "Contingency Planning",
-          "score": 2.980461597442627
-        },
-        {
-          "id": "cp-1",
-          "title": "Policy and Procedures",
-          "description": "a. Develop, document, and disseminate to [Assignment: organization-defined personnel or roles]:\n  1. [Selection (one or more): organization-level; mission/business process-level; system-level] contingency planning policy that:\n    (a) Addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance; and\n    (b) Is consistent with applicable laws, executive orders, directives, regulations, policies, standards, and guidelines; and\n  2. Procedures to facilitate the implementation of the contingency planning policy and the associated contingency planning controls;\nb. Designate an [Assignment: official] to manage the development, documentation, and dissemination of the contingency planning policy and procedures; and\nc. Review and update the current contingency planning:\n  1. Policy [Assignment: frequency] and following [Assignment: events] ; and\n  2. Procedures [Assignment: frequency] and following [Assignment: events].",
-          "category": "Contingency Planning",
-          "score": 2.978334903717041
-        },
-        {
-          "id": "cp-4",
-          "title": "Contingency Plan Testing",
-          "description": "a. Test the contingency plan for the system [Assignment: frequency] using the following tests to determine the effectiveness of the plan and the readiness to execute the plan: [Assignment: organization-defined tests].\nb. Review the contingency plan test results; and\nc. Initiate corrective actions, if needed.",
-          "category": "Contingency Planning",
-          "score": 2.9230377674102783
-        },
         {
           "id": "cp-9",
           "title": "System Backup",
           "description": "a. Conduct backups of user-level information contained in [Assignment: system components] [Assignment: frequency];\nb. Conduct backups of system-level information contained in the system [Assignment: frequency];\nc. Conduct backups of system documentation, including security- and privacy-related documentation [Assignment: frequency] ; and\nd. Protect the confidentiality, integrity, and availability of backup information.",
           "category": "Contingency Planning",
-          "score": 2.7372958660125732
+          "score": 2.946432590484619
+        },
+        {
+          "id": "cp-2",
+          "title": "Contingency Plan",
+          "description": "a. Develop a contingency plan for the system that:\n  1. Identifies essential mission and business functions and associated contingency requirements;\n  2. Provides recovery objectives, restoration priorities, and metrics;\n  3. Addresses contingency roles, responsibilities, assigned individuals with contact information;\n  4. Addresses maintaining essential mission and business functions despite a system disruption, compromise, or failure;\n  5. Addresses eventual, full system restoration without deterioration of the controls originally planned and implemented;\n  6. Addresses the sharing of contingency information; and\n  7. Is reviewed and approved by [Assignment: organization-defined personnel or roles];\nb. Distribute copies of the contingency plan to [Assignment: organization-defined key contingency personnel (identified by name and/or by role) and organizational elements];\nc. Coordinate contingency planning activities with incident handling activities;\nd. Review the contingency plan for the system [Assignment: frequency];\ne. Update the contingency plan to address changes to the organization, system, or environment of operation and problems encountered during contingency plan implementation, execution, or testing;\nf. Communicate contingency plan changes to [Assignment: organization-defined key contingency personnel (identified by name and/or by role) and organizational elements];\ng. Incorporate lessons learned from contingency plan testing, training, or actual contingency activities into contingency testing and training; and\nh. Protect the contingency plan from unauthorized disclosure and modification.",
+          "category": "Contingency Planning",
+          "score": 2.9088587760925293
         },
         {
           "id": "cp-6",
           "title": "Alternate Storage Site",
           "description": "a. Establish an alternate storage site, including necessary agreements to permit the storage and retrieval of system backup information; and\nb. Ensure that the alternate storage site provides controls equivalent to that of the primary site.",
           "category": "Contingency Planning",
-          "score": 2.562896966934204
+          "score": 2.769197940826416
         },
         {
           "id": "cp-9.6",
           "title": "Redundant Secondary System",
           "description": "Conduct system backup by maintaining a redundant secondary system that is not collocated with the primary system and that can be activated without loss of information or disruption to operations.",
           "category": "Contingency Planning",
-          "score": 2.552971839904785
+          "score": 2.7231171131134033
         },
         {
           "id": "cp-9.3",
           "title": "Separate Storage for Critical Information",
           "description": "Store backup copies of [Assignment: critical system software and other security-related information] in a separate facility or in a fire rated container that is not collocated with the operational system.",
           "category": "Contingency Planning",
-          "score": 2.4749886989593506
+          "score": 2.567859649658203
         },
         {
-          "id": "sa-15.11",
-          "title": "Archive System or Component",
-          "description": "Require the developer of the system or system component to archive the system or component to be released or delivered together with the corresponding evidence supporting the final security and privacy review.",
-          "category": "System and Services Acquisition",
-          "score": 2.376091718673706
+          "id": "cp-6.2",
+          "title": "Recovery Time and Recovery Point Objectives",
+          "description": "Configure the alternate storage site to facilitate recovery operations in accordance with recovery time and recovery point objectives.",
+          "category": "Contingency Planning",
+          "score": 2.2456471920013428
+        },
+        {
+          "id": "cp-4.4",
+          "title": "Full Recovery and Reconstitution",
+          "description": "Include a full recovery and reconstitution of the system to a known state as part of contingency plan testing.",
+          "category": "Contingency Planning",
+          "score": 2.2085607051849365
+        },
+        {
+          "id": "cp-1",
+          "title": "Policy and Procedures",
+          "description": "a. Develop, document, and disseminate to [Assignment: organization-defined personnel or roles]:\n  1. [Selection (one or more): organization-level; mission/business process-level; system-level] contingency planning policy that:\n    (a) Addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance; and\n    (b) Is consistent with applicable laws, executive orders, directives, regulations, policies, standards, and guidelines; and\n  2. Procedures to facilitate the implementation of the contingency planning policy and the associated contingency planning controls;\nb. Designate an [Assignment: official] to manage the development, documentation, and dissemination of the contingency planning policy and procedures; and\nc. Review and update the current contingency planning:\n  1. Policy [Assignment: frequency] and following [Assignment: events] ; and\n  2. Procedures [Assignment: frequency] and following [Assignment: events].",
+          "category": "Contingency Planning",
+          "score": 2.187879800796509
+        },
+        {
+          "id": "cp-10.4",
+          "title": "Restore Within Time Period",
+          "description": "Provide the capability to restore system components within [Assignment: restoration time periods] from configuration-controlled and integrity-protected information representing a known, operational state for the components.",
+          "category": "Contingency Planning",
+          "score": 2.1509594917297363
         }
       ],
       "relevant": {
@@ -1104,8 +955,8 @@
       },
       "retrieval": {
         "recall": 0.6666666666666666,
-        "family_recall": 0.6666666666666666,
-        "ndcg": 0.5316519652587917
+        "family_recall": 1.0,
+        "ndcg": 0.8670870086853021
       },
       "answer_quality": {
         "faithfulness": 5,
@@ -1114,18 +965,15 @@
       "citations": {
         "grounded": [
           "cp-1",
-          "cp-3.1",
           "cp-9.3",
+          "cp-6.2",
           "cp-9.6",
-          "sa-15.11",
-          "cp-2",
-          "cp-4",
-          "cp-8.4",
-          "cp-9"
+          "cp-4.4",
+          "cp-10.4"
         ],
         "invented": []
       },
-      "answer": "Contingency planning requirements\n\n- Establish and document a contingency planning policy and procedures, assign an official to manage them, and review/update the policy and procedures on an organization-defined schedule and after specified events [cp-1].  \n- Develop a system contingency plan that:\n  - Identifies essential mission/business functions and contingency requirements, recovery objectives, restoration priorities, and metrics; assigns roles, responsibilities, and contact information; and addresses maintaining essential functions during disruption and eventual full system restoration without control degradation [cp-2(a)(1)-(6)].  \n  - Includes sharing of contingency information, is reviewed and approved by organization-defined personnel/roles, and is protected from unauthorized disclosure and modification [cp-2(a)(6)-(7), cp-2(h)].  \n- Distribute copies of the contingency plan to organization-defined key contingency personnel and organizational elements, coordinate contingency planning with incident handling, and review and update the plan at an organization-defined frequency and when changes occur; communicate plan changes to key personnel and incorporate lessons learned from testing/training/actual incidents [cp-2(b)-(g)].\n\nContingency training and testing\n\n- Include simulated events within contingency training to improve personnel response in crises [cp-3.1].  \n- Test the contingency plan at an organization-defined frequency using organization-defined test types, review test results, and initiate corrective actions as needed [cp-4(a)-(c)].\n\nProvider contingency\n\n- Require primary and alternate telecommunications providers to have contingency plans, review those plans for conformance to organizational contingency requirements, and obtain evidence of providers’ contingency testing and training at an organization-defined frequency [cp-8.4(a)-(c)].\n\nSystem backup and storage requirements\n\n- Back up user-level information, system-level information, and system documentation (including security/privacy documentation) at organization-defined frequencies, and protect confidentiality, integrity, and availability of backup information [cp-9(a)-(d)].  \n- Maintain backups in an alternate storage site (with necessary agreements) that provides controls equivalent to the primary site [cp-6(a)-(b)].  \n- For critical system software and other security-related information, store backup copies in a separate facility or a fire-rated container not co-located with the operational system [cp-9.3].  \n- Alternatively or additionally, maintain a redundant secondary system that is geographically separate (not collocated) and can be activated without data loss or operational disruption [cp-9.6].  \n- If procuring system components, require developers to archive the delivered system/component along with evidence supporting final security and privacy review [sa-15.11].\n\nIf you need organization-specific frequencies, designated personnel, or the list of organization-defined tests and assignments, those details are not specified in the supplied controls and must be defined by your organization (the controls require insertion of those organization-defined values) [cp-1], [cp-2], [cp-4], [cp-8.4], [cp-9]."
+      "answer": "Summary of contingency planning and backup requirements based on the supplied controls:\n\nPolicy & procedures\n- Establish and disseminate a documented contingency planning policy and implementing procedures, designate an official to manage them, and review/update the policy and procedures at organization-defined frequencies and after specified events [cp-1].  \n\nContingency plan content, distribution, and maintenance\n- Develop a system contingency plan that: identifies essential mission/business functions and contingency requirements; provides recovery objectives, restoration priorities, and metrics; assigns contingency roles, responsibilities, and contact information; addresses maintaining essential functions during disruption and full restoration without control degradation; addresses sharing of contingency information; and is reviewed/approved by organization-defined personnel or roles [cp-2a.1–7].  \n- Distribute plan copies to organization-defined key contingency personnel/elements and coordinate contingency planning with incident handling [cp-2b,c].  \n- Review the contingency plan at organization-defined frequency, update it to reflect organizational/system/environment changes and problems encountered during implementation/testing, communicate changes to key personnel, and incorporate lessons learned from testing/training/actual events [cp-2d–g].  \n- Protect the contingency plan from unauthorized disclosure and modification [cp-2h].\n\nBackup requirements\n- Conduct backups of user-level information in identified system components at organization-defined frequencies [cp-9a].  \n- Conduct backups of system-level information at organization-defined frequencies [cp-9b].  \n- Conduct backups of system documentation (including security/privacy documentation) at organization-defined frequencies [cp-9c].  \n- Protect the confidentiality, integrity, and availability of backup information [cp-9d].\n\nBackup storage and alternative facilities\n- Maintain backup copies of critical system software and other security-related information in a separate facility or in a fire-rated container not collocated with the operational system [cp-9.3].  \n- Establish an alternate storage site (including necessary agreements) to permit storage and retrieval of system backup information, and ensure the alternate site provides controls equivalent to the primary site [cp-6a,b].  \n- Configure the alternate storage site to facilitate recovery in accordance with recovery time and recovery point objectives [cp-6.2].  \n- Optionally, maintain a redundant secondary system that is not collocated with the primary system and can be activated without information loss or operational disruption to serve as a system backup [cp-9.6].\n\nRecovery and testing\n- Include full recovery and reconstitution of the system to a known state as part of contingency plan testing [cp-4.4].  \n- Provide the capability to restore system components within organization-defined restoration time periods from configuration-controlled and integrity-protected information representing a known, operational state [cp-10.4].\n\nIf you want, specify the organization-defined items (e.g., backup frequencies, recovery time/objectives, approval roles, review frequencies) and I will produce concrete statements you can adopt."
     },
     {
       "query": "How is least privilege enforced and separation of duties maintained?",
@@ -1134,12 +982,12 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "least privilege",
-          "purpose": "Find controls that require limiting privileges, managing access rights, and granting only necessary permissions to enforce least privilege."
+          "search_query": "least privilege enforcement for user and process access",
+          "purpose": "Find controls that require implementing least privilege, account management, privileged access restrictions, and limitations on capabilities for users and processes."
         },
         {
-          "search_query": "separation of duties",
-          "purpose": "Find controls that require separating roles, duties, and functions to prevent conflict of interest and inappropriate combination of privileges."
+          "search_query": "separation of duties and role-based segregation of tasks",
+          "purpose": "Find controls that mandate separation of duties, role-based access control, dual control, and mechanisms to prevent conflict of interest or fraud by splitting privileges and tasks."
         }
       ],
       "retrieved": [
@@ -1148,70 +996,63 @@
           "title": "Least Privilege",
           "description": "Employ the principle of least privilege, allowing only authorized accesses for users (or processes acting on behalf of users) that are necessary to accomplish assigned organizational tasks.",
           "category": "Access Control",
-          "score": 3.153442621231079
+          "score": 3.178255558013916
         },
         {
           "id": "sa-17.7",
           "title": "Structure for Least Privilege",
           "description": "Require the developer of the system, system component, or system service to structure security-relevant hardware, software, and firmware to facilitate controlling access with least privilege.",
           "category": "System and Services Acquisition",
-          "score": 2.97904372215271
-        },
-        {
-          "id": "ac-5",
-          "title": "Separation of Duties",
-          "description": "a. Identify and document [Assignment: duties of individuals] ; and\nb. Define system access authorizations to support separation of duties.",
-          "category": "Access Control",
-          "score": 2.606851100921631
-        },
-        {
-          "id": "cm-7.6",
-          "title": "Confined Environments with Limited Privileges",
-          "description": "Require that the following user-installed software execute in a confined physical or virtual machine environment with limited privileges: [Assignment: user-installed software].",
-          "category": "Configuration Management",
-          "score": 2.458860397338867
+          "score": 2.6869611740112305
         },
         {
           "id": "sa-8.14",
           "title": "Least Privilege",
           "description": "Implement the security design principle of least privilege in [Assignment: systems or system components].",
           "category": "System and Services Acquisition",
-          "score": 2.4113614559173584
+          "score": 2.4053354263305664
         },
         {
-          "id": "ac-6.2",
-          "title": "Non-privileged Access for Nonsecurity Functions",
-          "description": "Require that users of system accounts (or roles) with access to [Assignment: security functions or security-relevant information] use non-privileged accounts or roles, when accessing nonsecurity functions.",
+          "id": "ac-24.2",
+          "title": "No User or Process Identity",
+          "description": "Enforce access control decisions based on [Assignment: organization-defined security or privacy attributes] that do not include the identity of the user or process acting on behalf of the user.",
           "category": "Access Control",
-          "score": 2.232797622680664
+          "score": 2.392397403717041
+        },
+        {
+          "id": "cm-7.6",
+          "title": "Confined Environments with Limited Privileges",
+          "description": "Require that the following user-installed software execute in a confined physical or virtual machine environment with limited privileges: [Assignment: user-installed software].",
+          "category": "Configuration Management",
+          "score": 2.3752055168151855
+        },
+        {
+          "id": "ac-5",
+          "title": "Separation of Duties",
+          "description": "a. Identify and document [Assignment: duties of individuals] ; and\nb. Define system access authorizations to support separation of duties.",
+          "category": "Access Control",
+          "score": 2.3383407592773438
         },
         {
           "id": "sc-22",
           "title": "Architecture and Provisioning for Name/Address Resolution Service",
           "description": "Ensure the systems that collectively provide name/address resolution service for an organization are fault-tolerant and implement internal and external role separation.",
           "category": "System and Communications Protection",
-          "score": 1.9468296766281128
+          "score": 2.1062965393066406
         },
         {
-          "id": "sc-7.20",
-          "title": "Dynamic Isolation and Segregation",
-          "description": "Provide the capability to dynamically isolate [Assignment: system components] from other system components.",
-          "category": "System and Communications Protection",
-          "score": 1.9296379089355469
+          "id": "ac-4.21",
+          "title": "Physical or Logical Separation of Information Flows",
+          "description": "Separate information flows logically or physically using [Assignment: organization-defined mechanisms and/or techniques] to accomplish [Assignment: required separations].",
+          "category": "Access Control",
+          "score": 1.8543131351470947
         },
         {
           "id": "au-16.3",
           "title": "Disassociability",
           "description": "Implement [Assignment: measures] to disassociate individuals from audit information transmitted across organizational boundaries.",
           "category": "Audit and Accountability",
-          "score": 1.886924386024475
-        },
-        {
-          "id": "si-13.1",
-          "title": "Transferring Component Responsibilities",
-          "description": "Take system components out of service by transferring component responsibilities to substitute components no later than [Assignment: fraction or percentage] of mean time to failure.",
-          "category": "System and Information Integrity",
-          "score": 1.8511229753494263
+          "score": 1.8404889106750488
         }
       ],
       "relevant": {
@@ -1222,7 +1063,7 @@
       "retrieval": {
         "recall": 0.6666666666666666,
         "family_recall": 1.0,
-        "ndcg": 0.7974779478881874
+        "ndcg": 0.5316519652587917
       },
       "answer_quality": {
         "faithfulness": 5,
@@ -1233,17 +1074,16 @@
           "ac-6",
           "sa-17.7",
           "sa-8.14",
-          "ac-6.2",
-          "cm-7.6",
           "ac-5",
-          "sc-7.20",
+          "ac-4.21",
           "sc-22",
-          "au-16.3",
-          "si-13.1"
+          "ac-24.2",
+          "cm-7.6",
+          "au-16.3"
         ],
         "invented": []
       },
-      "answer": "Least privilege is enforced by applying the principle that users and processes are granted only the access necessary to accomplish assigned tasks [ac-6]. Procurement and system design reinforce that enforcement by requiring developers to structure security-relevant hardware, software, and firmware so access can be controlled to support least privilege [sa-17.7] and by explicitly implementing least-privilege design in designated systems or components [sa-8.14]. Operationally, accounts that have access to security functions or security-relevant information are constrained so that when those account holders perform nonsecurity functions they use non‑privileged accounts or roles [ac-6.2]. For user-installed software, execution is restricted to confined physical or virtual environments with limited privileges, which helps ensure such software cannot escalate privileges beyond its minimal needs [cm-7.6].\n\nSeparation of duties is maintained by first identifying and documenting the duties of individuals and then defining system access authorizations to support those separations—i.e., mapping documented duties to access controls that prevent conflicting functions from being held by the same individual [ac-5]. Technical controls that support separation include dynamic isolation/segregation capabilities to isolate system components from others as needed [sc-7.20], and role separation in critical infrastructure such as name/address resolution services to separate internal and external roles [sc-22].\n\nNotes on related operational behaviors: audit information is protected from being trivially associated with individuals when transmitted across boundaries by implementing disassociability measures for audit data [au-16.3]. Finally, to avoid unexpected consolidation of responsibilities when components fail, component responsibilities are transferred to substitute components within an organizationally defined fraction of mean time to failure [si-13.1].\n\nIf you need specific mappings of duties to access authorizations or concrete examples of confined environments, those requirements (e.g., the particular duties, the list of user‑installed software to confine, or the exact substitution fraction for failures) are not provided in the supplied controls and would need to be defined to create detailed policies."
+      "answer": "Least privilege is enforced by implementing the principle that users and processes are granted only the accesses necessary to perform assigned tasks, and by requiring system components to be structured to make such constrained access feasible. Concretely: assign only necessary access rights to users/processes per task (least privilege) [ac-6]; require developers to structure security-relevant hardware/software/firmware so access can be controlled to support least-privilege operation [sa-17.7]; and apply least-privilege design to systems or components as part of acquisition/design activities [sa-8.14].\n\nSeparation of duties is maintained by identifying and documenting organizational duties and then defining system access authorizations to enforce those separations (so that conflicting duties cannot be performed by the same account) [ac-5]. Logical or physical separation of information flows is used where required to accomplish needed separations (for example, isolating workflows or data sets) [ac-4.21]. For services that provide critical infrastructure functions (name/address resolution), ensure role separation internally and externally and build fault-tolerance into those systems to support role-based separation of responsibilities [sc-22].\n\nAdditional supporting controls:\n- Where access decisions must not rely on user/process identity, enforce decisions using organization-defined security/privacy attributes instead of identity when appropriate [ac-24.2].  \n- Require user-installed software to run in confined physical or virtual environments with limited privileges, reducing the chance of privilege escalation that would violate least privilege/separation goals [cm-7.6].  \n- Implement measures to disassociate individuals from audit information transmitted across organizational boundaries to preserve separation and privacy of audit data when sharing occurs [au-16.3].\n\nIf you need a specific implementation plan (e.g., role definitions, attribute lists, mechanisms for confinement, or examples of organization-defined attributes/techniques), those specifics are not provided in the controls above; they would need to be defined by the organization consistent with the controls cited."
     },
     {
       "query": "What controls apply to configuration management and baseline configurations?",
@@ -1252,8 +1092,12 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "Configuration management and baseline configurations",
-          "purpose": "Find controls that define requirements for establishing, maintaining, and enforcing baseline configurations and configuration management processes."
+          "search_query": "configuration management and baseline configuration controls",
+          "purpose": "Find controls that require establishing, documenting, maintaining, and enforcing baseline configurations and overall configuration management processes for information systems."
+        },
+        {
+          "search_query": "configuration change control and authorization",
+          "purpose": "Find controls that require controlling, approving, and tracking changes to system configurations, including change authorization and auditing."
         }
       ],
       "retrieved": [
@@ -1262,35 +1106,70 @@
           "title": "Baseline Configuration",
           "description": "a. Develop, document, and maintain under configuration control, a current baseline configuration of the system; and\nb. Review and update the baseline configuration of the system:\n  1. [Assignment: frequency];\n  2. When required due to [Assignment: circumstances] ; and\n  3. When system components are installed or upgraded.",
           "category": "Configuration Management",
-          "score": 3.1179957389831543
+          "score": 3.0775861740112305
         },
         {
           "id": "cm-2.6",
           "title": "Development and Test Environments",
           "description": "Maintain a baseline configuration for system development and test environments that is managed separately from the operational baseline configuration.",
           "category": "Configuration Management",
-          "score": 2.8358383178710938
+          "score": 2.7061026096343994
         },
         {
-          "id": "cm-3.3",
-          "title": "Automated Change Implementation",
-          "description": "Implement changes to the current system baseline and deploy the updated baseline across the installed base using [Assignment: automated mechanisms].",
+          "id": "cm-3",
+          "title": "Configuration Change Control",
+          "description": "a. Determine and document the types of changes to the system that are configuration-controlled;\nb. Review proposed configuration-controlled changes to the system and approve or disapprove such changes with explicit consideration for security and privacy impact analyses;\nc. Document configuration change decisions associated with the system;\nd. Implement approved configuration-controlled changes to the system;\ne. Retain records of configuration-controlled changes to the system for [Assignment: time period];\nf. Monitor and review activities associated with configuration-controlled changes to the system; and\ng. Coordinate and provide oversight for configuration change control activities through [Assignment: configuration change control element] that convenes [Selection (one or more): [Assignment: frequency] ; when [Assignment: configuration change conditions] ].",
           "category": "Configuration Management",
-          "score": 2.6366264820098877
+          "score": 2.6734914779663086
         },
         {
           "id": "cm-2.2",
           "title": "Automation Support for Accuracy and Currency",
           "description": "Maintain the currency, completeness, accuracy, and availability of the baseline configuration of the system using [Assignment: automated mechanisms].",
           "category": "Configuration Management",
-          "score": 2.617485284805298
+          "score": 2.5221331119537354
+        },
+        {
+          "id": "cm-3.3",
+          "title": "Automated Change Implementation",
+          "description": "Implement changes to the current system baseline and deploy the updated baseline across the installed base using [Assignment: automated mechanisms].",
+          "category": "Configuration Management",
+          "score": 2.45070743560791
         },
         {
           "id": "cm-9",
           "title": "Configuration Management Plan",
           "description": "Develop, document, and implement a configuration management plan for the system that:\n  a. Addresses roles, responsibilities, and configuration management processes and procedures;\n  b. Establishes a process for identifying configuration items throughout the system development life cycle and for managing the configuration of the configuration items;\n  c. Defines the configuration items for the system and places the configuration items under configuration management;\n  d. Is reviewed and approved by [Assignment: personnel or roles] ; and\n  e. Protects the configuration management plan from unauthorized disclosure and modification.",
           "category": "Configuration Management",
-          "score": 2.398068904876709
+          "score": 2.394524097442627
+        },
+        {
+          "id": "cm-3.1",
+          "title": "Automated Documentation, Notification, and Prohibition of Changes",
+          "description": "Use [Assignment: automated mechanisms] to:\n  (a) Document proposed changes to the system;\n  (b) Notify [Assignment: approval authorities] of proposed changes to the system and request change approval;\n  (c) Highlight proposed changes to the system that have not been approved or disapproved within [Assignment: time period];\n  (d) Prohibit changes to the system until designated approvals are received;\n  (e) Document all changes to the system; and\n  (f) Notify [Assignment: personnel] when approved changes to the system are completed.",
+          "category": "Configuration Management",
+          "score": 2.392042875289917
+        },
+        {
+          "id": "cm-5",
+          "title": "Access Restrictions for Change",
+          "description": "Define, document, approve, and enforce physical and logical access restrictions associated with changes to the system.",
+          "category": "Configuration Management",
+          "score": 2.3883209228515625
+        },
+        {
+          "id": "sa-10",
+          "title": "Developer Configuration Management",
+          "description": "Require the developer of the system, system component, or system service to:\n  a. Perform configuration management during system, component, or service [Selection (one or more): design; development; implementation; operation; disposal];\n  b. Document, manage, and control the integrity of changes to [Assignment: configuration items];\n  c. Implement only organization-approved changes to the system, component, or service;\n  d. Document approved changes to the system, component, or service and the potential security and privacy impacts of such changes; and\n  e. Track security flaws and flaw resolution within the system, component, or service and report findings to [Assignment: personnel].",
+          "category": "System and Services Acquisition",
+          "score": 2.3851306438446045
+        },
+        {
+          "id": "cm-5.4",
+          "title": "Dual Authorization",
+          "description": "Enforce dual authorization for implementing changes to [Assignment: organization-defined system components and system-level information].",
+          "category": "Configuration Management",
+          "score": 2.3681161403656006
         }
       ],
       "relevant": {
@@ -1300,9 +1179,9 @@
         "cm-7": 1
       },
       "retrieval": {
-        "recall": 0.25,
+        "recall": 0.5,
         "family_recall": 0.5,
-        "ndcg": 0.4770382338730848
+        "ndcg": 0.5962977923413559
       },
       "answer_quality": {
         "faithfulness": 5,
@@ -1313,12 +1192,17 @@
           "cm-2",
           "cm-2.6",
           "cm-2.2",
+          "cm-3",
+          "cm-3.1",
           "cm-3.3",
-          "cm-9"
+          "cm-5",
+          "cm-9",
+          "sa-10",
+          "cm-5.4"
         ],
         "invented": []
       },
-      "answer": "Controls that apply to configuration management and baseline configurations from the supplied set are:\n\n- [cm-2] Baseline Configuration requires you to develop, document, and maintain a current baseline configuration under configuration control, and to review and update that baseline on a defined frequency, when specified circumstances occur, and whenever system components are installed or upgraded [cm-2].\n\n- [cm-2.6] Development and Test Environments requires maintaining a baseline configuration for development and test environments that is managed separately from the operational baseline configuration, i.e., separate baselines for dev/test vs. production [cm-2.6].\n\n- [cm-2.2] Automation Support for Accuracy and Currency requires using assigned automated mechanisms to maintain the currency, completeness, accuracy, and availability of the system baseline configuration [cm-2.2].\n\n- [cm-3.3] Automated Change Implementation requires implementing changes to the current system baseline and deploying the updated baseline across the installed base using assigned automated mechanisms, i.e., automated deployment of baseline changes [cm-3.3].\n\n- [cm-9] Configuration Management Plan requires developing, documenting, and implementing a configuration management plan that: addresses roles/responsibilities and CM processes; establishes a process for identifying and managing configuration items across the system life cycle; defines and places configuration items under CM; is reviewed and approved by assigned personnel/roles; and is protected from unauthorized disclosure and modification [cm-9].\n\nIf you need the specific values for the items marked “[Assignment: …]” (e.g., review frequency, circumstances that trigger review, which automated mechanisms, and which approving personnel/roles), those are not provided in the supplied controls and must be defined separately."
+      "answer": "Controls that apply to configuration management and baseline configurations in the supplied set:\n\n- Establishing and maintaining a system baseline configuration: [cm-2] requires developing, documenting, and maintaining under configuration control a current baseline configuration and reviewing/updating it at defined frequency, when specified circumstances occur, and when components are installed or upgraded [cm-2].\n\n- Separating development/test baselines from operational baseline: [cm-2.6] requires maintaining a baseline configuration for development and test environments that is managed separately from the operational baseline [cm-2.6].\n\n- Using automation to keep baselines accurate and current: [cm-2.2] requires maintaining currency, completeness, accuracy, and availability of the baseline using assigned automated mechanisms [cm-2.2].\n\n- Controlling and documenting configuration changes: [cm-3] requires determining/documenting which types of changes are configuration-controlled; reviewing and approving proposed configuration-controlled changes with security/privacy impact consideration; documenting decisions; implementing approved changes; retaining records for an assigned time period; monitoring/reviewing change activities; and coordinating oversight through an assigned configuration change control element that convenes at assigned frequency or under assigned conditions [cm-3].\n\n- Automated support for change management steps: [cm-3.1] requires use of assigned automated mechanisms to document proposed changes, notify approval authorities and request approvals, flag unapproved proposals after an assigned period, prohibit changes until approvals are received, document all changes, and notify personnel when approved changes are completed [cm-3.1].\n\n- Automated change implementation and deployment of updated baselines: [cm-3.3] requires implementing changes to the current baseline and deploying the updated baseline across the installed base using assigned automated mechanisms [cm-3.3].\n\n- Access restrictions for change activities: [cm-5] requires defining, documenting, approving, and enforcing physical and logical access restrictions associated with changes to the system [cm-5].\n\n- Configuration management planning: [cm-9] requires developing, documenting, and implementing a configuration management plan that addresses roles/responsibilities and CM processes; establishes item identification and lifecycle management; defines and places configuration items under CM; is reviewed/approved by assigned personnel/roles; and protects the plan from unauthorized disclosure and modification [cm-9].\n\n- Developer responsibilities for CM: [sa-10] requires system/component/service developers to perform configuration management across lifecycle phases; document/manage/control integrity of configuration item changes; implement only organization-approved changes; document approved changes and their security/privacy impacts; and track/report security flaws and resolutions to assigned personnel [sa-10].\n\n- Dual authorization for certain changes: [cm-5.4] requires enforcing dual authorization for implementing changes to organization-defined system components and system-level information [cm-5.4].\n\nIf you need, I can map these to specific actions you should take (e.g., define review frequency, select automated mechanisms, assign change control board, retention period, and authorization rules) — note those specifics are left as assignments in the controls."
     },
     {
       "query": "What is the capital of France?",
@@ -1327,8 +1211,8 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "capital of France",
-          "purpose": "Find the control(s) that mention or require knowledge of the capital of France (to determine whether any NIST SP 800-53 control addresses this factual question)."
+          "search_query": "Geography: capital city of France",
+          "purpose": "Find control statements about determining or documenting the capital city of France."
         }
       ],
       "retrieved": [],
@@ -1345,8 +1229,8 @@
       "passed": true,
       "plan_steps": [
         {
-          "search_query": "How to bake a chocolate cake",
-          "purpose": "Find NIST SP 800-53 controls related to baking a chocolate cake (to verify whether any control covers food preparation)."
+          "search_query": "Not applicable — cooking recipe for chocolate cake",
+          "purpose": "The question is outside the scope of the NIST SP 800-53 control catalog; identify that no relevant security control documents cover how to bake a chocolate cake."
         }
       ],
       "retrieved": [],
@@ -1359,9 +1243,9 @@
   ],
   "aggregate": {
     "on_topic_count": 13,
-    "mean_recall": 0.45512820512820507,
-    "mean_family_recall": 0.6192307692307693,
-    "mean_ndcg": 0.49373361642348595,
+    "mean_recall": 0.45128205128205123,
+    "mean_family_recall": 0.6525641025641025,
+    "mean_ndcg": 0.49017329566979184,
     "mean_faithfulness": 5.0,
     "mean_answer_relevancy": 5.0,
     "total_invented_citations": 0,

@@ -18,10 +18,11 @@ embedding call against the p90 latency budget.
 """
 
 import logging
-from typing import Final
+from typing import Any, Final
 
-from pydantic_ai import Agent, NativeOutput, UnexpectedModelBehavior
-from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
+from agent_framework import Agent, UsageDetails
+from agent_framework.openai import OpenAIChatClient, OpenAIChatOptions
+from pydantic import ValidationError
 
 from llm_policy_library.config import ReasoningEffort
 from llm_policy_library.models import PlannerOutput, PlanStep, QueryPlan
@@ -34,40 +35,36 @@ logger = logging.getLogger(__name__)
 # retrieving the same controls while still costing a round trip each.
 MAX_PLAN_STEPS: Final = 3
 
-# The Planner is the only agent that constrains the model's output shape — its
-# `output_type` is `PlannerOutput`, the searches alone, not the full `QueryPlan`.
-PlannerAgent = Agent[None, PlannerOutput]
+# The Planner is the only agent that constrains the model's output shape, so it
+# is the only one whose options carry a `response_format` — and that schema is
+# `PlannerOutput`, the searches alone, not the full `QueryPlan`.
+PlannerOptions = OpenAIChatOptions[PlannerOutput]
+PlannerAgent = Agent[PlannerOptions]
 
 
 class PlannerError(RuntimeError):
     """Raised when the chat model returns no usable plan."""
 
 
-def build_planner(model: OpenAIChatModel, reasoning_effort: ReasoningEffort) -> PlannerAgent:
-    """Construct the Planner Agent over a PydanticAI chat model.
+def build_planner(
+    chat_client: OpenAIChatClient[PlannerOptions], reasoning_effort: ReasoningEffort
+) -> PlannerAgent:
+    """Construct the Planner Agent over an Azure OpenAI chat client.
 
     Args:
-        model: Model bound to the chat deployment.
+        chat_client: Client bound to the chat deployment.
         reasoning_effort: Reasoning effort to request on every call.
 
     Returns:
         The configured agent.
     """
+    # agent-framework's `ReasoningOptions.effort` literal omits "minimal", which
+    # is the lowest effort gpt-5-mini accepts (it rejects "none" with a 400).
+    # Typing the value loosely beats vendoring a literal that is missing a member.
+    reasoning: Any = {"effort": reasoning_effort}
+    options: PlannerOptions = {"response_format": PlannerOutput, "reasoning": reasoning}
     instructions = get_prompt("planner_instructions", max_plan_steps=MAX_PLAN_STEPS)
-    return Agent(
-        model,
-        instructions=instructions,
-        # `NativeOutput` selects the provider's native structured outputs
-        # (`response_format` with the JSON schema), the enforcement the module
-        # docstring promises. PydanticAI's default mode would instead wrap the
-        # schema in a synthetic tool call.
-        output_type=NativeOutput(PlannerOutput),
-        # `openai_reasoning_effort`, not `reasoning_effort`: PydanticAI ignores
-        # settings keys it does not know, so the misnamed key would silently
-        # run every call at the model's default effort.
-        model_settings=OpenAIChatModelSettings(openai_reasoning_effort=reasoning_effort),
-        name="planner",
-    )
+    return Agent(chat_client, instructions, name="planner", default_options=options)
 
 
 def usable_steps(steps: list[PlanStep]) -> list[PlanStep]:
@@ -110,17 +107,17 @@ async def plan_query(agent: PlannerAgent, query: str) -> QueryPlan:
         The plan, with `original_query` set to `query` verbatim.
 
     Raises:
-        PlannerError: If the model could not produce a plan matching the schema
-            (PydanticAI raises `UnexpectedModelBehavior` once its own output
-            retries are exhausted), or if the plan has no usable steps. Neither
-            is retryable in place: the caller surfaces the failure rather than
-            answering from an empty plan.
+        PlannerError: If the model returned nothing, an unparseable plan, or a
+            plan with no usable steps. None of these is retryable in place: the
+            caller surfaces the failure rather than answering from an empty plan.
     """
+    response = await agent.run(query)
     try:
-        response = await agent.run(query)
-    except UnexpectedModelBehavior as error:
-        raise PlannerError(f"planner failed to produce a valid plan: {error}") from error
-    planned = response.output
+        planned = response.value
+    except ValidationError as error:
+        raise PlannerError(f"planner returned a plan that failed validation: {error}") from error
+    if planned is None:
+        raise PlannerError("planner returned no structured plan")
     usable = usable_steps(planned.steps)
     if not usable:
         raise PlannerError("planner returned a plan with no steps carrying a search query")
@@ -138,18 +135,20 @@ async def plan_query(agent: PlannerAgent, query: str) -> QueryPlan:
         )
 
     plan = QueryPlan(original_query=query, steps=clamp_steps(usable))
+    usage = response.usage_details or UsageDetails()
     logger.info(
         "query planned",
         extra={
             "query": query,
             "planned_steps": len(planned.steps),
             "kept_steps": len(plan.steps),
-            # The chat tokens this stage really spent. Capacity planning needs
+            # The chat tokens this stage really spent, from the usage the Agent
+            # Framework surfaces as `usage_details`. Capacity planning needs
             # tokens per request measured, not estimated: the Azure OpenAI TPM
             # quota is what a concurrent workload exhausts first, and the audit
             # trail is the only place the real number exists.
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
+            "input_tokens": usage.get("input_token_count") or 0,
+            "output_tokens": usage.get("output_token_count") or 0,
             # Both fields of each kept step: the query drives retrieval, and the
             # purpose is the model's stated reason for it — the only record of
             # *why* a search ran, which `PlanStep.purpose` exists to preserve.

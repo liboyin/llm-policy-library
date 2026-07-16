@@ -13,17 +13,17 @@ an invented control ID can never be reported as a source. It is logged as a
 grounding violation, which is the signal that the prompt or the model regressed.
 
 The answer itself is free prose rather than a JSON schema. The Planner needs a
-schema because a plan is data; an answer is text, and an output schema here
+schema because a plan is data; an answer is text, and a `response_format` here
 would only wrap prose in a JSON envelope while costing the model tokens.
 """
 
 import logging
 import re
 from collections.abc import Iterable
-from typing import Final
+from typing import Any, Final
 
-from pydantic_ai import Agent, UnexpectedModelBehavior
-from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
+from agent_framework import Agent, UsageDetails
+from agent_framework.openai import OpenAIChatClient, OpenAIChatOptions
 
 from llm_policy_library.config import ReasoningEffort
 from llm_policy_library.models import GroundedResponse, RetrievedDocument
@@ -37,8 +37,10 @@ logger = logging.getLogger(__name__)
 # allow-list below, not silently skipped by the regex.
 _CITATION_PATTERN: Final = re.compile(r"\[([a-z]{2}-\d+(?:\.\d+)?)\]", re.IGNORECASE)
 
-# The output type stays `str`, PydanticAI's default: the answer is prose.
-ResponseAgent = Agent[None, str]
+# The Response Agent constrains nothing about the output shape: an answer is
+# prose, so its options carry no `response_format`.
+ResponseOptions = OpenAIChatOptions[None]
+ResponseAgent = Agent[ResponseOptions]
 
 
 class ResponseError(RuntimeError):
@@ -46,25 +48,22 @@ class ResponseError(RuntimeError):
 
 
 def build_response_agent(
-    model: OpenAIChatModel, reasoning_effort: ReasoningEffort
+    chat_client: OpenAIChatClient[ResponseOptions], reasoning_effort: ReasoningEffort
 ) -> ResponseAgent:
-    """Construct the Response Agent over a PydanticAI chat model.
+    """Construct the Response Agent over an Azure OpenAI chat client.
 
     Args:
-        model: Model bound to the chat deployment.
+        chat_client: Client bound to the chat deployment.
         reasoning_effort: Reasoning effort to request on every call.
 
     Returns:
         The configured agent.
     """
+    # See `planner.build_planner` on why the effort value is typed loosely.
+    reasoning: Any = {"effort": reasoning_effort}
+    options: ResponseOptions = {"reasoning": reasoning}
     instructions = get_prompt("response_instructions")
-    return Agent(
-        model,
-        instructions=instructions,
-        # See `planner.build_planner` on why the key is `openai_reasoning_effort`.
-        model_settings=OpenAIChatModelSettings(openai_reasoning_effort=reasoning_effort),
-        name="response",
-    )
+    return Agent(chat_client, instructions, name="response", default_options=options)
 
 
 def format_documents(documents: Iterable[RetrievedDocument]) -> str:
@@ -134,23 +133,18 @@ async def generate_response(
         which case no chat model is called.
 
     Raises:
-        ResponseError: If the model returned no answer text — whether PydanticAI
-            gave up on empty model responses (`UnexpectedModelBehavior`) or the
-            text was whitespace-only. That is an upstream failure, not a refusal:
-            serving it as an empty answer would look like a grounded one, and
-            serving the fallback would claim, untruthfully, that no relevant
-            control was found.
+        ResponseError: If the model returned no answer text. That is an upstream
+            failure, not a refusal: serving it as an empty answer would look like
+            a grounded one, and serving the fallback would claim, untruthfully,
+            that no relevant control was found.
     """
     if not documents:
         logger.info("safe fallback returned", extra={"query": query, "reason": "no documents"})
         return safe_fallback()
 
     prompt = f"Question: {query}\n\nControls:\n\n{format_documents(documents)}"
-    try:
-        response = await agent.run(prompt)
-    except UnexpectedModelBehavior as error:
-        raise ResponseError(f"response agent failed to produce an answer: {error}") from error
-    answer = response.output.strip()
+    response = await agent.run(prompt)
+    answer = response.text.strip()
     if not answer:
         raise ResponseError(f"response agent returned an empty answer for query {query!r}")
 
@@ -160,17 +154,18 @@ async def generate_response(
             "answer cited controls that were not retrieved",
             extra={"query": query, "invented_citations": invented},
         )
+    usage = response.usage_details or UsageDetails()
     logger.info(
         "answer generated",
         extra={
             "query": query,
             "citations": grounded,
             "answer_chars": len(answer),
-            # The same keys the Planner logs: summing them across one correlation
-            # ID gives the chat tokens a request really cost, which is what the
-            # chat deployment's TPM quota is spent against.
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
+            # The same keys the Planner logs, from `usage_details`: summing them
+            # across one correlation ID gives the chat tokens a request really
+            # cost, which is what the chat deployment's TPM quota is spent against.
+            "input_tokens": usage.get("input_token_count") or 0,
+            "output_tokens": usage.get("output_token_count") or 0,
         },
     )
     return GroundedResponse(answer=answer, citations=grounded, is_fallback=False)

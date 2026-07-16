@@ -1,14 +1,9 @@
 """Unit tests for `llm_policy_library.agents.response`."""
 
 import logging
-from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic_ai import UnexpectedModelBehavior
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.models.test import TestModel
-from pydantic_ai.usage import RunUsage
 
 import llm_policy_library.agents.response as testee
 from llm_policy_library.models import RetrievedDocument
@@ -46,25 +41,27 @@ def agent_answering(answer: str, input_tokens: int = 3500, output_tokens: int = 
         The stub agent.
     """
     agent = MagicMock()
-    # A real `RunUsage`, not a MagicMock attribute: `generate_response` logs these
-    # as the measured token cost, and a MagicMock would let a non-int reach the
-    # audit trail without any test noticing.
+    # A real `UsageDetails` mapping, not a MagicMock attribute: `generate_response`
+    # logs these as the measured token cost, and a MagicMock would let a non-int
+    # reach the audit trail without any test noticing.
     agent.run = AsyncMock(
         return_value=MagicMock(
-            output=answer,
-            usage=RunUsage(input_tokens=input_tokens, output_tokens=output_tokens),
+            text=answer,
+            usage_details={
+                "input_token_count": input_tokens,
+                "output_token_count": output_tokens,
+            },
         )
     )
     return agent
 
 
-def test_build_response_agent_sets_the_configured_effort_and_prose_output() -> None:
+def test_build_response_agent_sets_the_configured_effort_and_no_response_format() -> None:
     """An answer is prose; a JSON envelope would cost tokens and buy nothing."""
-    agent = testee.build_response_agent(cast(OpenAIChatModel, TestModel()), "minimal")
+    agent = testee.build_response_agent(MagicMock(), "minimal")
 
-    # See test_planner on why the exact settings key is load-bearing.
-    assert agent.model_settings == {"openai_reasoning_effort": "minimal"}
-    assert agent.output_type is str
+    assert agent.default_options["reasoning"] == {"effort": "minimal"}
+    assert "response_format" not in agent.default_options
 
 
 def test_response_instructions_forbid_uncited_and_invented_controls() -> None:
@@ -212,15 +209,6 @@ async def test_generate_response_raises_on_an_empty_answer() -> None:
         await testee.generate_response(agent, "q", [make_document("ac-2")])
 
 
-async def test_generate_response_wraps_a_model_misbehavior_as_a_response_error() -> None:
-    """A model that gives up answering is a Response failure, not an opaque library error."""
-    agent = MagicMock()
-    agent.run = AsyncMock(side_effect=UnexpectedModelBehavior("Exceeded maximum retries"))
-
-    with pytest.raises(testee.ResponseError, match="failed to produce"):
-        await testee.generate_response(agent, "q", [make_document("ac-2")])
-
-
 async def test_generate_response_logs_the_chat_tokens_the_run_billed(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -233,3 +221,19 @@ async def test_generate_response_logs_the_chat_tokens_the_run_billed(
     record = next(record for record in caplog.records if record.message == "answer generated")
     assert getattr(record, "input_tokens") == 3612
     assert getattr(record, "output_tokens") == 241
+
+
+async def test_generate_response_logs_zero_tokens_when_usage_is_absent(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`loadtest.checks.summarize_run` sums these keys, so a missing usage must log 0, not None."""
+    agent = agent_answering("See [ac-2].")
+    # A run whose usage the client did not populate: `usage_details` is None.
+    agent.run.return_value.usage_details = None
+
+    with caplog.at_level(logging.INFO, logger=testee.__name__):
+        await testee.generate_response(agent, "q", [make_document("ac-2")])
+
+    record = next(record for record in caplog.records if record.message == "answer generated")
+    assert getattr(record, "input_tokens") == 0
+    assert getattr(record, "output_tokens") == 0

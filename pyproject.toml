@@ -20,13 +20,19 @@ dependencies = [
   "openai",
   "pydantic>=2",
   "pydantic-settings>=2",
-  # PydanticAI replaced the Microsoft Agent Framework, whose pins conflicted
-  # with azure-search-documents. `-slim` with the one extra we use: the
-  # `pydantic-ai` meta-package pulls every provider (Anthropic, Groq, Mistral,
-  # ...) plus evals and MCP, none of which this project touches.
-  # Floor at 2: the code uses the post-1.0 surface (`OpenAIChatModel`,
-  # `output_type`, `openai_reasoning_effort`).
-  "pydantic-ai-slim[openai]>=2",
+  # The Microsoft Agent Framework, which TASK.md requirement 2 mandates for the
+  # multi-agent system. `-core` holds the Azure OpenAI chat client and the
+  # Workflow engine; `-openai` holds the client itself. NOT the `agent-framework`
+  # meta-package: it pulls ~40 optional integrations (Bedrock, Ollama, Redis, ...)
+  # this project never touches, and there is no `agent-framework-azure-openai` —
+  # the Azure client is `OpenAIChatClient(azure_endpoint=...)`. The version
+  # conflict with azure-search-documents that once drove the PydanticAI migration
+  # no longer exists (verified 2026-07-16). Floored at the surface this code needs
+  # (`AgentResponse`, `usage_details`, `OpenAIChatOptions[...]`, `output_from=`);
+  # major-capped because the API drifts even across minors (1.10 -> 1.11 renamed
+  # `AgentRunResponse` to `AgentResponse`).
+  "agent-framework-core>=1.11,<2",
+  "agent-framework-openai>=1.10,<2",
   "python-dotenv",
   "tenacity",
   "uvicorn",

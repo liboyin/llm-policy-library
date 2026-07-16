@@ -2,8 +2,8 @@
 
 These models are the contracts of the pipeline: the Planner emits a `QueryPlan`,
 the Retrieval Agent turns it into a `RetrievalOutcome`, and the Response Agent
-answers with a `GroundedResponse`, which the orchestrator packs into a
-`PipelineResult`. Every hop is a validated Pydantic model rather than
+answers with a `GroundedResponse`, which the orchestrator's final executor packs
+into a `PipelineResult`. Every hop is a validated Pydantic model rather than
 free text, which is what makes the orchestration inspectable — the audit log and
 the evaluation harness both read these objects, not prose.
 
@@ -12,7 +12,8 @@ output is a `PlannerOutput` — the searches, and nothing else — which the Pla
 combines with the known question to build the `QueryPlan`. Keeping the two apart
 means the model never has to reproduce the question only for the Planner to
 discard its copy. `PlannerOutput.steps`' field descriptions are therefore the
-prompt surface, and must not contradict `agents.planner.PLANNER_INSTRUCTIONS`.
+prompt surface, and must not contradict the `planner_instructions` prompt
+(`llm_policy_library.prompts`).
 `PlannerOutput` deliberately carries no `min_length`/`max_length`: the step count
 is an invariant of the Planner, not of the wire format, and enforcing it here
 would turn an over-eager model response into a `ValidationError` deep inside the
@@ -56,9 +57,10 @@ class PlannerOutput(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    # No step count in the description: `agents.planner.PLANNER_INSTRUCTIONS` is
-    # the one prompt surface that states the limit, interpolated from
-    # `MAX_PLAN_STEPS`. A number here would be a second source that drifts from it.
+    # No step count in the description: the `planner_instructions` prompt is the
+    # one prompt surface that states the limit, interpolated from `MAX_PLAN_STEPS`
+    # by `agents.planner.build_planner`. A number here would be a second source
+    # that drifts from it.
     steps: list[PlanStep] = Field(
         description="The searches that together answer the question."
     )

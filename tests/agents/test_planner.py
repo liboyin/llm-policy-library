@@ -1,14 +1,11 @@
 """Unit tests for `llm_policy_library.agents.planner`."""
 
 import logging
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic_ai import NativeOutput, UnexpectedModelBehavior
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.models.test import TestModel
-from pydantic_ai.usage import RunUsage
+from pydantic import BaseModel, ValidationError
 
 import llm_policy_library.agents.planner as testee
 from llm_policy_library.models import PlannerOutput, PlanStep
@@ -31,41 +28,39 @@ def planner_returning(value: Any, input_tokens: int = 800, output_tokens: int = 
     """Stub a Planner Agent whose structured output is `value`.
 
     Args:
-        value: What `AgentRunResult.output` holds, or an exception `run` raises.
+        value: What `AgentResponse.value` yields, or an exception to raise.
         input_tokens: The prompt tokens the run billed.
         output_tokens: The completion tokens the run billed.
 
     Returns:
         The stub agent.
     """
-    agent = MagicMock()
+    response = MagicMock()
     if isinstance(value, Exception):
-        agent.run = AsyncMock(side_effect=value)
+        type(response).value = property(lambda _: (_ for _ in ()).throw(value))
     else:
-        # A real `RunUsage`, not a MagicMock attribute: `plan_query` logs these
-        # as the measured token cost, and a MagicMock would let a non-int reach
-        # the audit trail without any test noticing.
-        agent.run = AsyncMock(
-            return_value=MagicMock(
-                output=value,
-                usage=RunUsage(input_tokens=input_tokens, output_tokens=output_tokens),
-            )
-        )
+        response.value = value
+    # A real `UsageDetails` mapping, not a MagicMock attribute: `plan_query` logs
+    # these as the measured token cost, and a MagicMock would let a non-int reach
+    # the audit trail without any test noticing.
+    response.usage_details = {
+        "input_token_count": input_tokens,
+        "output_token_count": output_tokens,
+    }
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=response)
     return agent
 
 
 def test_build_planner_requests_the_searches_only_schema_and_configured_effort() -> None:
     """The model's schema is PlannerOutput (searches only), so it never echoes the question."""
-    agent = testee.build_planner(cast(OpenAIChatModel, TestModel()), "minimal")
+    chat_client = MagicMock()
 
-    # `NativeOutput`, not the bare model: the default output mode would move
-    # schema enforcement into a synthetic tool call instead of the provider's
-    # native structured outputs.
-    assert isinstance(agent.output_type, NativeOutput)
-    assert agent.output_type.outputs is PlannerOutput
-    # The exact key matters: PydanticAI silently drops settings keys it does
-    # not recognize, so a misspelt key would run at the model's default effort.
-    assert agent.model_settings == {"openai_reasoning_effort": "minimal"}
+    agent = testee.build_planner(chat_client, "minimal")
+
+    options = agent.default_options
+    assert options["response_format"] is PlannerOutput
+    assert options["reasoning"] == {"effort": "minimal"}
 
 
 def test_planner_instructions_forbid_web_search_operators() -> None:
@@ -148,11 +143,11 @@ async def test_plan_query_passes_the_users_question_to_the_agent() -> None:
     agent.run.assert_awaited_once_with("How is sensitive data protected?")
 
 
-async def test_plan_query_wraps_a_model_misbehavior_as_a_planner_error() -> None:
-    """A model that cannot produce the schema is a Planner failure, not a library error."""
-    agent = planner_returning(UnexpectedModelBehavior("Exceeded maximum retries"))
+async def test_plan_query_raises_when_the_model_returns_no_plan() -> None:
+    """Answering from an absent plan would search on nothing and ground on nothing."""
+    agent = planner_returning(None)
 
-    with pytest.raises(testee.PlannerError, match="valid plan"):
+    with pytest.raises(testee.PlannerError, match="no structured plan"):
         await testee.plan_query(agent, "q")
 
 
@@ -188,6 +183,20 @@ async def test_plan_query_warns_when_the_model_exceeds_the_step_limit(
     assert any(record.levelno == logging.WARNING for record in caplog.records)
 
 
+async def test_plan_query_wraps_a_schema_violation_as_a_planner_error() -> None:
+    """A malformed structured output is a Planner failure, not an opaque pydantic error."""
+
+    class _Other(BaseModel):
+        value: int
+
+    with pytest.raises(ValidationError) as schema_violation:
+        _Other(value="not an int")  # type: ignore[arg-type]
+    agent = planner_returning(schema_violation.value)
+
+    with pytest.raises(testee.PlannerError, match="failed validation"):
+        await testee.plan_query(agent, "q")
+
+
 async def test_plan_query_logs_the_chat_tokens_the_run_billed(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -202,3 +211,19 @@ async def test_plan_query_logs_the_chat_tokens_the_run_billed(
     record = next(record for record in caplog.records if record.message == "query planned")
     assert getattr(record, "input_tokens") == 812
     assert getattr(record, "output_tokens") == 44
+
+
+async def test_plan_query_logs_zero_tokens_when_usage_is_absent(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`loadtest.checks.summarize_run` sums these keys, so a missing usage must log 0, not None."""
+    agent = planner_returning(PlannerOutput(steps=[make_step("q")]))
+    # A run whose usage the client did not populate: `usage_details` is None.
+    agent.run.return_value.usage_details = None
+
+    with caplog.at_level(logging.INFO, logger=testee.__name__):
+        await testee.plan_query(agent, "q")
+
+    record = next(record for record in caplog.records if record.message == "query planned")
+    assert getattr(record, "input_tokens") == 0
+    assert getattr(record, "output_tokens") == 0

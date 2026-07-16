@@ -235,7 +235,7 @@ Issues:
 Consider introducing external libraries:
 
 - [ ] **LlamaIndex**: Replace the manual retrieval logic and custom search wrappers with LlamaIndex. Use it to handle Azure AI Search index connection, document ingestion, and advanced retrieval strategies out of the box. (User decided to hold off.)
-- [x] **PydanticAI**: Refactor the multi-agent system (previously using Microsoft Agent Framework) to use PydanticAI. This provides native typed LLM responses and a cleaner abstraction for agent orchestration.
+- [x] **PydanticAI**: Refactor the multi-agent system (previously using Microsoft Agent Framework) to use PydanticAI. This provides native typed LLM responses and a cleaner abstraction for agent orchestration. **Superseded by Phase 9 (user decision, 2026-07-16):** TASK.md requirement 2 explicitly mandates the Microsoft Agent Framework, which this refactor had silently dropped; the orchestration migrates back.
 - [x] **Ragas**: ~~Replace the custom precision/recall evaluation logic and `azure-ai-evaluation` with the Ragas framework to natively compute Context Precision, Context Recall, Faithfulness (Groundedness), and Answer Relevance using LLMs-as-a-judge.~~ **Rejected in favor of PydanticAI judges + deterministic metrics (user decision, 2026-07-12).** A dev-branch Ragas commit (`cb9bc40`) was reviewed and turned down: (1) Ragas drags in a second LLM framework (langchain + langchain-core/community/openai, HF datasets, pandas, nest_asyncio) right after the project consolidated on PydanticAI, and needed a 5-method `AzureChatOpenAI` subclass to strip `temperature` for the reasoning model — a problem this repo had already solved; (2) Ragas `context_precision`/`context_recall` are LLM-judged approximations for when no hand labels exist, while this project has hand-labeled graded qrels, which the commit squashed into a one-sentence synthetic ground truth (making context_recall near-binary) and left the grades unused; (3) commit defects: eval never re-run live (stale `samples/`), the tenacity None-on-failure semantics regressed to NaN→0.0, `ragas` unpinned while coded against the legacy 0.1-era API, undeclared direct imports, stale docs.
 
 **Status (verified live 2026-07-12) — evaluation harness rebuilt without `azure-ai-evaluation`:** the dependency is removed from `pyproject.toml`, and the harness now measures retrieval with deterministic metrics computed directly from the graded qrels — recall in the existing exact-ID and base-family variants, plus an in-house graded **NDCG@k** (gain = qrel label, discount `1/log2(rank+1)`, ideal from the query's own labels, truncated at k = `RETRIEVAL_TOP_K`) — and answer quality with two small **PydanticAI judge agents** (`llm_policy_library/agents/judges.py`): faithfulness (groundedness) and answer relevancy, each returning a structured integer 1-5 verdict with reasoning, prompts in the version-controlled JSON prompt store, tenacity retries preserving the log-and-record-None-on-failure semantics, injected into `evaluation.py` as Protocols so the harness stays unit-testable with plain fakes. **Precision and F1 are dropped** (user decision, 2026-07-12), superseding the Phase 5 precision/recall requirement (D5 stays as the historical record): at `RETRIEVAL_TOP_K=5` over a hierarchical catalog, precision penalizes retrieving related enhancements and is uninformative — recall gates answer quality, and NDCG covers ranking quality. The Azure-evaluator-specific XDCG/fidelity/holes are dropped with it, and the new NDCG@5 is not comparable to the old evaluator's NDCG@3 (noted in the report). Live re-run over the golden set: recall 0.455 exact-ID / 0.619 base-family, NDCG@5 0.494, faithfulness 5.0/5, answer relevancy 5.0/5, zero invented citations, 2/2 fallbacks.
@@ -284,6 +284,59 @@ Only after phases 0–7 are done and committed. Present these candidates to the 
 3. **GraphRAG over the control catalog**: exploits 800-53's rich `related-controls` links for multi-hop questions.
 
 - [ ] STOP and confirm with the user which (if any) to build before writing code.
+
+## Phase 9 — Migrate orchestration back to Microsoft Agent Framework (TASK.md compliance)
+
+**Why (user decision, 2026-07-16):** TASK.md requirement 2 explicitly says "Using the Microsoft Agent Framework (Python), implement a multi-agent system", and "agent framework usage" carries 25% of the evaluation weight. The PydanticAI migration (`0f1c754` orchestration, `92faa17` judges) — adopted from the Phase 5.5 gap review — silently dropped that requirement. Phase 9 migrates the agents back to MAF, reopening the project after the Phase 7 close-out. Planned by Claude in conversation with the user; execution is delegated to another agent, so this section is written to be self-sufficient.
+
+### Decisions (agreed with user, 2026-07-16)
+
+| # | Question | Decision |
+|---|----------|----------|
+| D8 | Also migrate back to `azure-ai-evaluation`? | **No.** TASK.md requires MAF only for the multi-agent system; evaluation needs only "a simple evaluation of relevance and grounding quality", so the SDK is not a compliance issue. It was dropped for real defects (heavy dependency tree; emits no precision/recall; `is_reasoning_model` + `cast` workarounds), and restoring it would churn `evaluation.py`/`run_eval.py`/the report format that `92faa17` rebuilt. Instead the two judges are **rewritten as MAF agents**: `pydantic-ai-slim` leaves the project entirely (single-framework story for the assessor), and `evaluation.py` stays untouched because judges enter it as injected Protocols. The deterministic recall/NDCG@5 metrics stay regardless — in-house, qrels-driven, framework-free. |
+| D9 | Orchestration shape | **Restore the Phase 3 `Workflow` design**: `WorkflowBuilder` wiring Planner → Retrieval → Response executors with typed messages, workflow built per query (measured 0.19 ms; solves the known concurrent-run blocker — a MAF `Workflow` holds one run's state). It is the reviewed, live-verified pre-migration design, and it demonstrates the framework's orchestration, which sequential awaits over MAF agents would not ("demonstrate clear orchestration" is TASK.md's own wording). |
+| D10 | Artifact regeneration | **Everything**: smoke test, evaluation report + transcripts, the 6-minute load test + serial baseline — each from one live run of the code as committed (the Phase 6 discipline). The Phase 6 memo's token/quota arithmetic is re-derived, since MAF's Responses-API client will shift per-request token counts. Cost ≈1M chat tokens (small dollars), ~30 min of live runs. |
+
+### Facts verified 2026-07-16 (go stale — re-probe at execution time)
+
+- **The version conflict `0f1c754` cited is gone.** `pip install --dry-run --ignore-installed` of `agent-framework-core` (1.11.0) + `agent-framework-openai` (1.10.1) + `azure-search-documents` (12.0.0) + every other runtime dep resolves cleanly on Python 3.14. (`azure-ai-evaluation` 1.18.1 would also coexist — recorded for the rejected D8 option.)
+- **MAF's API drifted since Phase 3 (built on ~1.10):** `AgentRunResponse` is now `AgentResponse`. Every name the pre-migration modules import (`Agent`, `Executor`, `Workflow`, `WorkflowBuilder`, `WorkflowContext`, `handler`, `OpenAIChatClient`, `OpenAIChatOptions`) still exists in 1.11, and `AgentResponse.usage_details` exists (needed for the Phase 6 token logging). Re-probe the Phase 3 sharp edges in a REPL before porting: the per-run `Workflow` state, `ReasoningOptions.effort`'s Literal omitting `"minimal"`, and the structured-output path.
+- **Azure infra is live:** the public `/healthz` returns 200; `.env` is present and was valid 2026-07-13. No re-ingestion needed — the index and `search_index.py`/`ingest.py`/`retrieval.py` are untouched by this phase.
+
+### Ground rules
+
+**Not a `git revert`.** The pre-migration MAF implementation at `0f1c754^` is the *reference* (`git show 0f1c754^:llm_policy_library/orchestrator.py`, etc. — it already reads `prompts.json`), but post-migration work layered on top must be preserved:
+
+- The token-usage audit-log contract from Phase 6: `plan_query`/`generate_response` log `input_tokens`/`output_tokens` (now from PydanticAI's `RunUsage`; port to MAF's `usage_details`) and `retrieve_step` logs `embedding_tokens`. `loadtest/checks.py::summarize_run` consumes these keys — they MUST survive unchanged.
+- The review-hardened guarantees: dedupe-before-grounding, the original-question guarantee, the blank-`search_query` guard (`PlannerError`, not an opaque embeddings 400), the empty-answer guard (`ResponseError`), the case-folded citation allow-list, structured log keys holding one type each.
+- Phase 4.5 serving hardening is framework-agnostic and untouched (`api.py`, `rate_limit.py`, `static/`); only the exception types crossing from the pipeline into `api.py`'s 502 mapping need re-checking.
+- Out of scope (unchanged prior decisions): the held-off Phase 5.5 items (domain guard, LlamaIndex, token-truncation guard) and the dev branch (its DomainGuard was never adopted on main).
+
+Each commit passes the full Definition of done below (gates, reviews); code commits get the two-family adversarial review, and the phase closes with a Fable 5 gap review.
+
+### Commit 1 — orchestration back to MAF (mirrors `0f1c754` in reverse)
+
+- [ ] `pyproject.toml`: drop `pydantic-ai-slim[openai]`; add `agent-framework-core` + `agent-framework-openai` (NOT the `agent-framework` meta-package — ~40 unused integrations; there is no `agent-framework-azure-openai`, the Azure client is `OpenAIChatClient(azure_endpoint=...)`). Recompile `requirements.txt` with pip-tools.
+- [ ] Port `agents/planner.py`, `agents/response.py`, `orchestrator.py` to MAF 1.11, restoring the Workflow design (D9) from the `0f1c754^` reference while preserving the guarantees and log-key contract above. Wrap MAF's failure modes as `PlannerError`/`ResponseError` (PydanticAI's `UnexpectedModelBehavior` wrapping has no direct equivalent — find what MAF raises).
+- [ ] `config.py`: `AZURE_OPENAI_CHAT_API_VERSION` back to `"preview"` — the rolling alias of the v1 Responses API surface the MAF client targets (restore the pre-migration comment). The pinned embeddings constant is unchanged.
+- [ ] `logging_setup.py`: re-add `agent_framework` to `_NOISY_LIBRARY_LOGGERS` (~6 superstep INFO lines per query — the Phase 3 finding); retire the `pydantic_ai` comment.
+- [ ] Port `tests/agents/test_planner.py`, `tests/agents/test_response.py`, `tests/test_orchestrator.py`. Keep the concurrency regression test (two concurrent queries, each getting its own result) — it is what pins the per-query workflow build against MAF's one-run-per-`Workflow` state.
+- [ ] Live CLI smoke test; regenerate `samples/smoke_test.{json,log}` (D10).
+
+### Commit 2 — judges to MAF (mirrors the judge half of `92faa17`)
+
+- [ ] Rewrite the two agents in `agents/judges.py` on MAF structured output: keep the reasoning-before-score 1–5 verdicts, the `prompts.json` prompts, the tenacity retry with log-and-record-`None`-on-final-failure semantics, and the Protocol interfaces `evaluation.py` consumes (`evaluation.py` itself stays untouched).
+- [ ] `evaluation/run_eval.py`: wire the judges through the MAF chat client (they keep their own client so judge traffic cannot outlive the pipeline's).
+- [ ] Port `tests/agents/test_judges.py`.
+- [ ] Live eval run over the golden set; regenerate `samples/evaluation_report.md` + `samples/evaluation_transcripts.json`; record the headline metrics in the commit body (D10).
+
+### Commit 3 — load-test rerun + documentation (D10)
+
+- [ ] Re-run the 6-minute, 10-user load test and `loadtest/baseline.py` against the MAF build (rate-limit budgets zeroed, per the README); regenerate every `samples/loadtest_*` artifact from that single run.
+- [ ] Re-derive the memo numbers in `samples/loadtest_results.md` — tokens/request, latency split, RPM-vs-TPM arithmetic, the 50-user extrapolation — rather than carrying PydanticAI-era numbers forward; update `docs/architecture.md`'s SLA summary if they shifted.
+- [ ] `README.md` + `docs/architecture.md`: MAF replaces PydanticAI in the framework references, the pipeline description, and the dependency rationale (the architecture doc names PydanticAI today precisely because TASK.md names MAF).
+- [ ] Verify every doc reflects final reality (CLAUDE.md documentation rule); the Phase 5.5 supersession pointer is already in place.
+- [ ] Pushing to `main` redeploys App Service via the existing GitHub workflow; verify with one live query against `https://llm-policy-library.azurewebsites.net/`.
 
 ---
 

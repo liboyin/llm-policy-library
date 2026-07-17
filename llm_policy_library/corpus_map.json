@@ -1,0 +1,108 @@
+{
+  "source": {
+    "url": "https://raw.githubusercontent.com/usnistgov/oscal-content/78650f02ad9321bb7b817846f8fbd4f2bcd620de/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json",
+    "sha": "78650f02ad9321bb7b817846f8fbd4f2bcd620de"
+  },
+  "families": [
+    {
+      "name": "Access Control",
+      "control_count": 131,
+      "abstract": "Account provisioning/deprovisioning, role/privilege assignment and review, least privilege, session/lock/logout, MFA/remote/wireless/mobile access, info-flow and DAC/MAC/ABAC enforcement"
+    },
+    {
+      "name": "Awareness and Training",
+      "control_count": 15,
+      "abstract": "Security/privacy awareness, literacy and role-based training; phishing/social‑engineering, insider‑threat, APT and cyber‑threat exercises; training records, updates, and feedback."
+    },
+    {
+      "name": "Audit and Accountability",
+      "control_count": 56,
+      "abstract": "System and application event logging, audit record content/retention, time stamps, centralized collection/correlation, log protection/transfer, real-time alerts and audit review/reporting."
+    },
+    {
+      "name": "Assessment, Authorization, and Monitoring",
+      "control_count": 25,
+      "abstract": "System-level control assessments, independent assessors, continuous monitoring, control assessment plans/reports, POA&Ms, system authorization/authorizing official, penetration/red-team testing"
+    },
+    {
+      "name": "Configuration Management",
+      "control_count": 56,
+      "abstract": "Baseline configurations, CMDB/inventory, change control/approval, automated rollout/rollback, configuration settings, hardening, software/firmware signing, least‑functionality."
+    },
+    {
+      "name": "Contingency Planning",
+      "control_count": 49,
+      "abstract": "System contingency plans, backups, alternate processing/storage/telecom sites, RTO/RPO, recovery/reconstitution, contingency testing/training, roles/contacts, plan protection and coordination."
+    },
+    {
+      "name": "Identification and Authentication",
+      "control_count": 59,
+      "abstract": "User/device/service identity proofing, account/identifier lifecycle, authenticators (passwords, MFA, biometrics, PKI, tokens, PIV), SSO, re‑auth, device attestation, token/certificate management"
+    },
+    {
+      "name": "Incident Response",
+      "control_count": 40,
+      "abstract": "Incident reporting, tracking, handling, containment, eradication, recovery; IR plans, playbooks, table‑tops/simulations, SOCs, CSIRT teams, forensics, automated correlation and notification"
+    },
+    {
+      "name": "Maintenance",
+      "control_count": 28,
+      "abstract": "Scheduling, authorizing, logging and sanitizing system maintenance (local, non‑local, field); maintenance tools, personnel authorization/escorts, spares, and records."
+    },
+    {
+      "name": "Media Protection",
+      "control_count": 20,
+      "abstract": "Controls for handling, marking, storing, transporting, restricting access to, sanitizing, downgrading, documenting, and auditing physical and digital system media and custodianship."
+    },
+    {
+      "name": "Physical and Environmental Protection",
+      "control_count": 51,
+      "abstract": "Facility physical security and environmental controls: access lists/credentials, guards/locks/vestibules, visitor logs, surveillance, power/fire/UPS, HVAC, water, EM emissions, asset tracking."
+    },
+    {
+      "name": "Planning",
+      "control_count": 11,
+      "abstract": "System-level planning artifacts: system security & privacy plans, CONOPS, security/privacy architectures, control baselines and tailoring, rules of behavior, central management of planned controls"
+    },
+    {
+      "name": "Program Management",
+      "control_count": 37,
+      "abstract": "Organization-wide security & privacy program governance: program/ privacy plans, senior security/privacy officers, budgets, system inventories, POA&Ms, risk strategy, continuous monitoring."
+    },
+    {
+      "name": "Personnel Security",
+      "control_count": 17,
+      "abstract": "Position risk designations, background checks/clearances/indoctrination, onboarding/offboarding actions (access revocation, exit interviews), transfers, access agreements, external personnel controls"
+    },
+    {
+      "name": "Personally Identifiable Information Processing and Transparency",
+      "control_count": 21,
+      "abstract": "PII-specific policies, authority-to-process, purpose-limitation, data tagging/automation, consent/just-in-time/revocation, privacy notices/Systems of Records notices, SSN rules, matching agreements"
+    },
+    {
+      "name": "Risk Assessment",
+      "control_count": 22,
+      "abstract": "System/information security categorization; system risk assessments, supply-chain & PII privacy impact assessments; vulnerability scanning, trend analysis, threat hunting, risk response."
+    },
+    {
+      "name": "System and Services Acquisition",
+      "control_count": 108,
+      "abstract": "Acquisition and procurement of systems/services: contract language, security/privacy requirements, developer deliverables (design, code, test evidence, configs), vendor oversight, cloud/location, keys"
+    },
+    {
+      "name": "System and Communications Protection",
+      "control_count": 139,
+      "abstract": "Network and boundary controls, subnetting/segmentation, firewalls/proxies, VPNs/remote access, TLS/cryptography, key management, traffic filtering, DoS mitigation, session protections"
+    },
+    {
+      "name": "System and Information Integrity",
+      "control_count": 102,
+      "abstract": "Patch/patch automation, flaw remediation, AV/malware & spam protection, integrity checks (boot/code/firmware), input validation, monitoring/IDS, alerts, data de‑identification"
+    },
+    {
+      "name": "Supply Chain Risk Management",
+      "control_count": 27,
+      "abstract": "Supplier vetting, contracts and flow‑downs, provenance/track‑and‑trace, anti‑counterfeit, tamper resistance/inspection, SCRM plans/teams, acquisition strategies and supplier assessments"
+    }
+  ]
+}

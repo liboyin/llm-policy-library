@@ -6,11 +6,11 @@
     x-ratelimit-limit-tokens: 150000
 
 === single-request latency floor (strictly serial: no queueing, no throttling) ===
-  [cold]     8566 ms  fallback=False  What controls apply to API security?
-  [warm]     7420 ms  fallback=False  How should sensitive data be protected in cloud systems?
-  [warm]    10402 ms  fallback=False  Summarise requirements for access control
-  [warm]     6646 ms  fallback=False  What policies relate to logging and monitoring?
-  [warm]     5836 ms  fallback=False  What are the requirements for multi-factor authentication?
-  [warm]     5857 ms  fallback=False  How should cryptographic keys be established and managed?
-  [warm]     2023 ms  fallback=True   What is the capital of France?
-  [warm]     5403 ms  fallback=False  How do I bake a chocolate cake?
+  [cold]     8594 ms  fallback=False  What controls apply to API security?
+  [warm]     4710 ms  fallback=False  How should sensitive data be protected in cloud systems?
+  [warm]     8415 ms  fallback=False  Summarise requirements for access control
+  [warm]     8106 ms  fallback=False  What policies relate to logging and monitoring?
+  [warm]     5874 ms  fallback=False  What are the requirements for multi-factor authentication?
+  [warm]     7584 ms  fallback=False  How should cryptographic keys be established and managed?
+  [warm]     1822 ms  fallback=True   What is the capital of France?
+  [warm]     1772 ms  fallback=True   How do I bake a chocolate cake?

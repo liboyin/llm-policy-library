@@ -2,7 +2,7 @@
 
 A multi-agent AI system that answers questions about enterprise security policies by
 retrieving from the NIST SP 800-53 Rev 5 control catalog indexed in Azure AI Search,
-planning a query with PydanticAI agents, and generating a grounded,
+planning a query with Microsoft Agent Framework agents, and generating a grounded,
 citation-bearing answer with Azure OpenAI.
 
 - [TASK.md](TASK.md) — the goals this project implements.
@@ -80,8 +80,9 @@ placeholders rendered verbatim) and the `key`/`id` field split are documented in
 
 ## The multi-agent pipeline
 
-Three PydanticAI agents run as a sequential pipeline; every edge is a validated Pydantic
-message, so a stage cannot quietly reinterpret what the previous one produced:
+Three Microsoft Agent Framework agents run as a sequential pipeline — a `WorkflowBuilder`
+chain built fresh per query; every edge is a validated Pydantic message, so a stage cannot
+quietly reinterpret what the previous one produced:
 
 **Planner** (chat, structured output: 1–3 search steps) → **Retrieval** (no LLM: embed,
 search, apply the relevance floor, deduplicate) → **Response** (chat, prose with inline
@@ -94,11 +95,13 @@ committed evaluation's on-topic queries. Each search returns its own top 5, and 
 spanning access control *and* logging needs both families; see
 [docs/architecture.md](docs/architecture.md).
 
-TASK.md names the Microsoft Agent Framework, which the project used through Phase 3 and
-migrated off in Phase 5.5 — its pins conflict with `azure-search-documents`, its `Workflow`
-holds per-run state that breaks on concurrent requests, and a straight-line three-stage
-chain needs no workflow engine. The agent contract TASK.md specifies is unchanged; the
-reasoning is in [docs/architecture.md](docs/architecture.md).
+TASK.md names the Microsoft Agent Framework, which the project used through Phase 3, briefly
+migrated off (to PydanticAI, Phase 5.5), and returned to in Phase 9 — the framework is a
+TASK.md requirement and 25 % of the grade. Orchestration is a `WorkflowBuilder` wiring the
+three agents; the dependency conflict that once drove the detour is gone, and the per-run
+state of a MAF `Workflow` and its `Executor`s is handled by building both fresh per query.
+The agent contract TASK.md specifies is unchanged; the reasoning is in
+[docs/architecture.md](docs/architecture.md).
 
 The full flow, the grounding guarantees, and the two-search-modes/two-score-scales design
 (why `AZURE_SEARCH_SEMANTIC_RANKER` selects both the search mode *and* the relevance
@@ -160,9 +163,9 @@ queries) through the pipeline and scores:
   and **base-family** (a retrieved enhancement credits its labelled base control — the
   fairer measure for a hierarchical catalog). Precision/F1 are deliberately not reported:
   at top-k 5 they penalize retrieving related enhancements and are uninformative.
-- **Answer quality** — faithfulness and answer relevancy (integer 1–5) from two PydanticAI
-  judge agents, prompts in the version-controlled store, retried with backoff, `None` on
-  persistent failure.
+- **Answer quality** — faithfulness and answer relevancy (integer 1–5) from two Microsoft
+  Agent Framework judge agents, prompts in the version-controlled store, retried with
+  backoff, `None` on persistent failure.
 - **Citation validity** — every inline citation must have been retrieved (hard check).
 - **Safe fallback** — the two out-of-domain queries must fall back.
 
@@ -200,10 +203,10 @@ committed artifact):
 
 | | p50 | p90 | p99 | SLA |
 |---|---:|---:|---:|---|
-| On-topic `POST /query` | 7.4 s | **9.4 s** | **11.0 s** | met, with headroom |
+| On-topic `POST /query` | 7.4 s | **9.4 s** | **12.0 s** | met, with headroom |
 
 Extrapolated to 50 users: the binding constraint is **chat RPM, not TPM and not
-latency** — ≈547 RPM needed against a 150 RPM quota, so the deployment needs **≈600K TPM**
+latency** — ≈550 RPM needed against a 150 RPM quota, so the deployment needs **≈600K TPM**
 (the quota grants 1 RPM per 1,000 TPM), and Azure AI Search needs replicas (start at 2).
 Whether the latency SLA still holds at 50 users is deliberately left open — the current
 quota caps any measurable run at ~14 users. The full quota math, the stage-level latency

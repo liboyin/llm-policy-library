@@ -1,2 +1,4 @@
 Method,Name,Error,Occurrences,First Seen,Last Seen
-POST,/query [out-of-domain],"CatchResponseError(""fallback did not fire for out-of-domain query 'What is the capital of France?'"")",2,2026-07-12T13:37:26Z,2026-07-12T13:39:32Z
+POST,/query [out-of-domain],"CatchResponseError(""fallback did not fire for out-of-domain query 'How do I bake a chocolate cake?'"")",5,2026-07-16T22:30:30Z,2026-07-16T22:34:05Z
+POST,/query [out-of-domain],"CatchResponseError(""fallback did not fire for out-of-domain query 'What is the capital of France?'"")",1,2026-07-16T22:30:26Z,2026-07-16T22:30:26Z
+POST,/query [on-topic],"CatchResponseError(""degraded: answer cited no controls for on-topic query 'What policies relate to logging and monitoring?'"")",1,2026-07-16T22:30:09Z,2026-07-16T22:30:09Z

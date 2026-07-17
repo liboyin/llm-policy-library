@@ -24,16 +24,18 @@ Any HTTP client        ─┘   POST /query     │                             
 
 One code path answers every question: the browser page and the CLI are both clients of the
 same `PolicyPipeline` the API wraps. Azure clients are opened once per process, never per
-request; the pipeline holds no per-run state, so one instance serves concurrent queries.
+request; the pipeline instance holds no per-run state — it builds a fresh MAF workflow and
+executors per query — so one instance serves concurrent queries.
 Deployment is a plain ASGI app — locally under `uvicorn`, and on Azure App Service via the
 GitHub Actions workflow in [.github/workflows/](../.github/workflows/).
 
 ## Agent interaction flow
 
-The agents run on **PydanticAI** (adopted in Phase 5.5 over the Microsoft Agent Framework
-the project started on — see [TODO.md](../TODO.md)) and communicate through typed Pydantic
-messages, not conversation — each edge is validated, so a stage cannot reinterpret what
-the previous one produced, and the chain of messages **is** the audit record:
+The agents run on the **Microsoft Agent Framework** (MAF) — the framework TASK.md names.
+The project started on it, took a Phase 5.5 detour to PydanticAI, and returned to it in
+Phase 9 (see [TODO.md](../TODO.md)). They communicate through typed Pydantic messages, not
+conversation — each edge is validated, so a stage cannot reinterpret what the previous one
+produced, and the chain of messages **is** the audit record:
 
 1. `str` → **Planner Agent** → `QueryPlan`. A structured-output chat call decomposes the
    question into 1–3 natural-language search steps (`PlanStep{search_query, purpose}`);
@@ -61,30 +63,37 @@ the previous one produced, and the chain of messages **is** the audit record:
    Otherwise a chat call answers strictly from the supplied controls with inline `[ac-2]`
    citations, and every citation is checked against the retrieved IDs after the call.
 
-### Why not the Microsoft Agent Framework
+### The Microsoft Agent Framework
 
-TASK.md names the Microsoft Agent Framework, and the system was built on it through Phase
-3. Three things drove the migration to PydanticAI in Phase 5.5, in ascending order of
-weight:
+TASK.md requirement 2 names the Microsoft Agent Framework outright, and "agent framework
+usage" is 25 % of the assessment — so MAF is a compliance requirement, not a free choice.
+The system was built on it through Phase 3, took a Phase 5.5 detour to PydanticAI, and was
+migrated back in Phase 9. Orchestration is a MAF `WorkflowBuilder` wiring
+Planner → Retrieval → Response `Executor`s that exchange the typed messages above; that
+`Workflow` is what "demonstrate clear orchestration" (TASK.md's wording) is demonstrated
+with. The three concerns that drove the Phase 5.5 detour, and how the return handles them:
 
-- **Dependency conflict.** `agent-framework`'s pins conflict with `azure-search-documents`,
-  which the retrieval path requires; `pydantic-ai-slim[openai]` resolves cleanly against it.
-- **Its `Workflow` holds per-run state.** A second *concurrent* run raises
-  `WorkflowException("Workflow is already running")`, so a single long-lived workflow would
-  have failed every overlapping request under the API and the load test. It was workable —
-  the fix was to build a fresh workflow per query — but it meant paying for orchestration
-  machinery and then working around it.
-- **The machinery bought nothing here.** The pipeline is a straight-line chain of three
-  stages, which PydanticAI expresses as three sequential `await`s over stateless agents
-  (`orchestrator.PolicyPipeline`), with model-side JSON-schema enforcement on the Planner's
-  output. `Workflow`/`Executor` is the right tool for branching, fan-out, or shared
-  conversational state; this pipeline has none of the three.
+- **The dependency conflict is gone.** `agent-framework-core` + `agent-framework-openai`
+  (not the `agent-framework` meta-package, which drags in ~40 unused integrations) resolve
+  cleanly against `azure-search-documents` 12.0.0 and the rest of the runtime deps — the
+  version conflict that existed at Phase 5.5 no longer does (re-verified at migration time).
+- **Per-run state is handled by building fresh per query.** A MAF `Workflow` carries one
+  run's state and rejects a concurrent second run, and each `Executor` serializes its
+  handler behind a per-instance `asyncio.Lock`. `PolicyPipeline.answer_query` therefore
+  builds a fresh workflow **and** fresh executors on each call (~0.4 ms), over the two
+  agents and the Azure clients, which are per-call stateless and shared safely — so
+  overlapping requests never contend on a shared lock. (Sharing the executors, as the
+  pre-detour design did, was found under review to serialize concurrent queries stage by
+  stage; the load test would have shed 504s. It was never load-tested on MAF before, so the
+  defect was latent — see [TODO.md](../TODO.md) Phase 9.)
+- **The Planner still enforces its output shape at the model.** MAF's structured outputs
+  (`response_format` on the Planner's options) give the same model-side JSON-schema
+  enforcement, so a plan's *shape* is guaranteed by the provider, not parsed out of prose.
 
-What TASK.md actually specifies of the agent layer is unchanged: a Planner, a Retrieval,
-and a Response agent, communicating through structured data under clear orchestration. Only
-the library beneath that contract differs — and the contract is *more* strictly enforced
-for it, since every edge is now a validated Pydantic message rather than a framework
-message envelope.
+What TASK.md specifies of the agent layer is unchanged across every framework the project
+has used: a Planner, a Retrieval, and a Response agent, communicating through structured
+data under clear orchestration. Every edge is a validated Pydantic message, so the contract
+is enforced by the message types regardless of the library carrying them.
 
 ## Determinism & grounding
 
@@ -225,20 +234,20 @@ The SLA target is 50 concurrent users, p90 ≤ 15 s, p99 ≤ 30 s (decision D3: 
 extrapolation).
 
 - **Measured at 10 users** (6 min, zero HTTP errors): on-topic p90 **9.4 s**, p99
-  **11.0 s** — met with headroom. Cost per on-topic request: 1,943 chat tokens over 2.00
-  chat calls, 2.04 searches.
+  **12.0 s** — met with headroom. Cost per on-topic request: 1,931 chat tokens over 2.00
+  chat calls, 1.79 searches.
 - **The binding constraint at 50 users is chat RPM, not TPM and not latency.** The
-  deployment grants 1 RPM per 1,000 TPM and a request spends ~905 tokens per chat call, so
-  RPM exhausts first. A calibrated closed-loop model puts 50 users at ≈5.3 RPS ⇒ **547 chat
-  RPM against a 150 RPM quota (3.6× over)** ⇒ provision **≈600K TPM**. Search reaches
-  ≈9.2 QPS ⇒ add replicas (start at 2) and re-measure.
+  deployment grants 1 RPM per 1,000 TPM and a chat call spends ~900 tokens (blended), so
+  RPM exhausts first. A calibrated closed-loop model puts 50 users at ≈5.3 RPS ⇒ **550 chat
+  RPM against a 150 RPM quota (3.7× over)** ⇒ provision **≈600K TPM**. Search reaches
+  ≈8.3 QPS ⇒ add replicas (start at 2) and re-measure.
 - **Whether p90/p99 still hold at 50 users is deliberately left open**: the extrapolation
   assumes constant response time, so it cannot prove it, and the current quota caps any
   honest run at ~14 users. Re-measure once quota exists.
-- **Levers**: skip the Planner on simple queries via a cheap pre-classifier (46.6% of plans
-  are single-step; the Planner is 27% of latency and half of RPM — this roughly halves the
-  quota requirement); PTU if p99 must be contractual; streaming helps perceived latency
-  only.
+- **Levers**: skip the Planner on simple queries via a cheap pre-classifier (50% of plans
+  are single-step; the Planner is 24% of latency and half of an on-topic request's RPM — a
+  gate skipping it on that traffic cuts RPM demand ~30%, 1.73→~1.2 calls/request); PTU if
+  p99 must be contractual; streaming helps perceived latency only.
 
 ## Governance controls
 

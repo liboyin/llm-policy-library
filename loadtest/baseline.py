@@ -25,10 +25,19 @@ from typing import Final
 
 import httpx
 
-from llm_policy_library.config import AZURE_OPENAI_CHAT_API_VERSION, load_settings
+from llm_policy_library.config import load_settings
 from loadtest.checks import ON_TOPIC_QUERIES, OUT_OF_DOMAIN_QUERIES
 
 API_URL: Final = "http://127.0.0.1:8000/query"
+
+# The quota probe reads the deployment's `x-ratelimit-limit-*` headers off the
+# classic `chat/completions`/`embeddings` routes. Those routes need a *dated*
+# api-version — the serving path's rolling `preview` alias belongs to the v1
+# Responses API and 404s the classic routes (no deployment context, no headers).
+# The rate limit is a property of the deployment, shared across every inference
+# route, so a GA dated version reads the same ceiling the Responses API is subject
+# to; this is a probe of infrastructure, not of the serving contract.
+QUOTA_PROBE_API_VERSION: Final = "2024-10-21"
 
 # Enough to see the spread without spending real money on a baseline.
 ON_TOPIC_SAMPLES: Final = 6
@@ -47,7 +56,7 @@ async def report_quota(endpoint: str, api_key: str, deployment: str, payload: di
     async with httpx.AsyncClient(timeout=60) as client:
         response = await client.post(
             f"{endpoint.rstrip('/')}/openai/deployments/{deployment}/{route}",
-            params={"api-version": AZURE_OPENAI_CHAT_API_VERSION},
+            params={"api-version": QUOTA_PROBE_API_VERSION},
             headers={"api-key": api_key},
             json=payload,
         )

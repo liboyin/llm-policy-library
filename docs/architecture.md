@@ -138,6 +138,15 @@ access disabled on both back ends — the model and the index then only answer f
 the VNet. Data residency is a deployment-type choice (Regional vs Global Standard; see
 [azure-setup.md](azure-setup.md)).
 
+**Prompt retention.** The Agent Framework chat client targets the Azure OpenAI Responses API,
+where `store` defaults to **true**, so every prompt and answer is retained server-side in the
+Azure OpenAI resource. This is left on **for the demo only** — it aids debugging and replay. In
+a regulated production environment it **MUST be turned off**: set `store: False` in the chat
+agents' `default_options` (`agents.planner.build_planner` and `agents.response.build_response_agent`,
+and the two judges in `agents.judges`) so the platform persists no policy question or grounded
+answer. Grounding and audit do not depend on it — the application's own JSON audit trail
+(citation-checked, correlation-ID'd) is the record of what was asked and answered.
+
 **Inbound exposure: the endpoint is open by design, so the budget is the control.**
 `POST /query` is deliberately unauthenticated — the demo is meant to be opened and used —
 which means an anonymous caller can spend the owner's Azure OpenAI quota, roughly two chat

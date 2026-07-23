@@ -71,6 +71,13 @@ class Settings(BaseSettings):
         llm_reasoning_effort: Reasoning effort for the chat model. Deployable
             Azure OpenAI chat models reject `temperature`/`top_p`/`seed`, so
             grounding and low reasoning effort stand in for sampling controls.
+        planner_corpus_map: Whether to show the Planner the corpus map. This
+            gates the whole feature, not just the prompt: with it off the
+            Planner also discards the `category` and `out_of_domain` its model
+            proposes, so the pipeline plans, filters, and refuses as it did
+            before the map existed. That is what makes it a usable A/B lever.
+            The model's *request* still differs — the structured-output schema
+            is shared by both arms; see `agents.planner`'s module docstring.
         rate_limit_per_ip_per_minute: Requests one caller may make per minute
             against `POST /query`; `0` disables the per-caller budget.
         rate_limit_global_per_minute: Requests one process may serve per minute
@@ -122,6 +129,12 @@ class Settings(BaseSettings):
     min_vector_score: float = Field(default=0.60, ge=0.0, le=1.0)
 
     llm_reasoning_effort: ReasoningEffort = "minimal"
+
+    # Default false until the A/B decides it. Phase 10 Commit 3 runs the eval
+    # harness three times per setting and flips this only if the map costs no
+    # measured quality (TODO.md, decision D12) — so until that runs, the shipped
+    # default is the configuration whose numbers are actually committed.
+    planner_corpus_map: bool = False
 
     # The service is public and unauthenticated, so these are what bound the
     # Azure OpenAI bill. `0` disables a budget — which the load test needs, since

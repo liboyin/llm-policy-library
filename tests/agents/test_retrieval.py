@@ -212,6 +212,71 @@ def test_build_search_kwargs_never_selects_the_embedding_field() -> None:
     assert kwargs["vector_queries"][0].fields == testee.VECTOR_FIELD
 
 
+def test_build_search_kwargs_sends_no_filter_when_the_step_names_no_family() -> None:
+    """A step naming no family must search the whole corpus, with no filter at all."""
+    # An always-on filter would silently narrow every query to whichever family
+    # happened to be the default, which no test of a filtered step would catch.
+    mode = testee.scoring_mode(make_settings(azure_search_semantic_ranker=True))
+
+    kwargs = testee.build_search_kwargs("q", [0.1], mode, top_k=5)
+
+    assert "filter" not in kwargs
+
+
+def test_build_search_kwargs_restricts_the_search_to_a_named_family() -> None:
+    """A named family becomes an OData equality filter on the `category` field."""
+    # This is where the map's routing win is actually spent; `search_index.py`
+    # already declares `category` filterable, so no index change is involved.
+    mode = testee.scoring_mode(make_settings(azure_search_semantic_ranker=True))
+
+    kwargs = testee.build_search_kwargs("q", [0.1], mode, top_k=5, category="Access Control")
+
+    assert kwargs["filter"] == "category eq 'Access Control'"
+
+
+def test_build_search_kwargs_keeps_the_semantic_ranker_alongside_a_filter() -> None:
+    """A filtered search keeps the semantic ranker, and so keeps its score scale."""
+    # Probed live 2026-07-22: filtered hits still carry `@search.rerankerScore`.
+    # Dropping the ranker under a filter would gate a semantic run on an RRF score,
+    # the one scale this module proves cannot separate relevant from irrelevant.
+    mode = testee.scoring_mode(make_settings(azure_search_semantic_ranker=True))
+
+    kwargs = testee.build_search_kwargs("q", [0.1], mode, top_k=5, category="Access Control")
+
+    assert kwargs["query_type"] == "semantic"
+    assert kwargs["semantic_configuration_name"] == testee.SEMANTIC_CONFIGURATION_NAME
+    assert kwargs["search_text"] == "q"
+
+
+def test_build_search_kwargs_filters_on_a_family_name_containing_commas() -> None:
+    """The one family whose catalog name carries commas must still filter correctly."""
+    # Measured 2026-07-22: exactly one of the twenty family names contains commas.
+    # A filter that split or trimmed the name would break on precisely that family.
+    mode = testee.scoring_mode(make_settings(azure_search_semantic_ranker=True))
+    family = "Assessment, Authorization, and Monitoring"
+
+    kwargs = testee.build_search_kwargs("q", [0.1], mode, top_k=5, category=family)
+
+    assert kwargs["filter"] == f"category eq '{family}'"
+
+
+def test_build_search_kwargs_escapes_an_apostrophe_instead_of_widening_the_filter() -> None:
+    """An apostrophe must be escaped, not passed through to break out of the literal."""
+    # No family name contains an apostrophe today, so this guards the invariant rather
+    # than a live case: `corpus_map.json` is model-generated and regenerated whenever
+    # the catalog commit moves, and its schema constrains the name's characters no
+    # further. Both failure modes were induced live on 2026-07-22 -- a stray apostrophe
+    # makes the service reject the syntax, and this crafted value returned HTTP 200
+    # with Access Control rows for a Media Protection filter.
+    mode = testee.scoring_mode(make_settings(azure_search_semantic_ranker=True))
+
+    kwargs = testee.build_search_kwargs(
+        "q", [0.1], mode, top_k=5, category="Media Protection' or category ne 'x"
+    )
+
+    assert kwargs["filter"] == "category eq 'Media Protection'' or category ne ''x'"
+
+
 def test_relevant_documents_drops_results_below_the_floor() -> None:
     """The floor is the only thing that can report "nothing relevant was found"."""
     mode = testee.ScoringMode(semantic=True, score_field="@search.rerankerScore", threshold=1.8)
@@ -375,6 +440,47 @@ async def test_retrieve_step_logs_the_rejected_documents_and_their_scores(
     assert getattr(record, "threshold") == 1.8
 
 
+async def test_retrieve_step_passes_the_steps_family_to_the_search_as_a_filter() -> None:
+    """The step's validated category must reach the search service as a filter."""
+    # Dropping it here would make every measured A/B difference the prompt's rather
+    # than the filter's, while the audit trail still claimed a narrowed search.
+    settings = make_settings(azure_search_semantic_ranker=True)
+    openai_client = MagicMock()
+    openai_client.embeddings.create = AsyncMock(return_value=embedding_response([0.1]))
+    search_client = MagicMock()
+    search_client.search = AsyncMock(
+        return_value=async_pager([search_row("ac-2", rerankerScore=2.2)])
+    )
+    step = PlanStep(search_query="q", purpose="p", category="Access Control")
+
+    await testee.retrieve_step(search_client, openai_client, settings, step)
+
+    assert search_client.search.await_args.kwargs["filter"] == "category eq 'Access Control'"
+
+
+async def test_retrieve_step_logs_the_family_the_search_was_narrowed_to(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The audit line records which family the search was narrowed to."""
+    # `dropped` otherwise reads as the whole corpus's verdict on the query, when a
+    # filtered step only ever saw one family of it -- and thresholds are retuned
+    # against exactly these lines.
+    settings = make_settings(azure_search_semantic_ranker=True)
+    openai_client = MagicMock()
+    openai_client.embeddings.create = AsyncMock(return_value=embedding_response([0.1]))
+    search_client = MagicMock()
+    search_client.search = AsyncMock(
+        return_value=async_pager([search_row("ac-2", rerankerScore=2.2)])
+    )
+    step = PlanStep(search_query="q", purpose="p", category="Access Control")
+
+    with caplog.at_level(logging.INFO, logger=testee.__name__):
+        await testee.retrieve_step(search_client, openai_client, settings, step)
+
+    record = next(record for record in caplog.records if record.message == "step retrieved")
+    assert getattr(record, "category") == "Access Control"
+
+
 async def test_retrieve_step_logs_the_tokens_the_embeddings_deployment_billed(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -419,3 +525,46 @@ async def test_retrieve_plan_runs_every_step_and_preserves_plan_order() -> None:
 
     assert [result.step.search_query for result in results] == ["first", "second"]
     assert search_client.search.await_count == 2
+
+
+async def test_retrieve_plan_spends_nothing_on_an_out_of_domain_plan() -> None:
+    """An out-of-domain plan must cost zero embedding calls and zero searches."""
+    # This is the whole point of refusing structurally rather than by retrieving
+    # nothing: the alternative spends one of each per step to learn what the
+    # Planner already knew.
+    settings = make_settings(azure_search_semantic_ranker=True)
+    openai_client = MagicMock()
+    openai_client.embeddings.create = AsyncMock(return_value=embedding_response([0.1]))
+    search_client = MagicMock()
+    search_client.search = AsyncMock(side_effect=AssertionError("the index must not be searched"))
+    plan = QueryPlan(original_query="What is the capital of France?", steps=[], out_of_domain=True)
+
+    results = await testee.retrieve_plan(search_client, openai_client, settings, plan)
+
+    assert results == []
+    openai_client.embeddings.create.assert_not_awaited()
+    search_client.search.assert_not_awaited()
+
+
+async def test_retrieve_plan_ignores_steps_on_a_plan_marked_out_of_domain() -> None:
+    """A plan marked out of domain is skipped even if it somehow carries steps."""
+    # Belt and braces behind the Planner's flag-wins precedence: were a step ever to
+    # survive onto such a plan, executing it would search the index on behalf of a
+    # question already refused.
+    settings = make_settings(azure_search_semantic_ranker=True)
+    openai_client = MagicMock()
+    openai_client.embeddings.create = AsyncMock(return_value=embedding_response([0.1]))
+    search_client = MagicMock()
+    search_client.search = AsyncMock(
+        return_value=async_pager([search_row("ac-2", rerankerScore=2.2)])
+    )
+    plan = QueryPlan(
+        original_query="How do I bake a chocolate cake?",
+        steps=[PlanStep(search_query="cake baking", purpose="p")],
+        out_of_domain=True,
+    )
+
+    results = await testee.retrieve_plan(search_client, openai_client, settings, plan)
+
+    assert results == []
+    search_client.search.assert_not_awaited()

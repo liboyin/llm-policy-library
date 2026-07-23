@@ -62,14 +62,19 @@ class OrchestrationError(RuntimeError):
 class PlannerExecutor(Executor):
     """Turns the user's question into a `QueryPlan`."""
 
-    def __init__(self, agent: PlannerAgent) -> None:
+    def __init__(self, agent: PlannerAgent, corpus_map: bool) -> None:
         """Bind the executor to a Planner Agent.
 
         Args:
             agent: The Planner Agent.
+            corpus_map: Whether the agent was built with the corpus map, which
+                also decides whether its `category`/`out_of_domain` answers are
+                honoured. It travels with the agent because it describes the
+                agent: the two must not disagree.
         """
         super().__init__(id="planner")
         self._agent = agent
+        self._corpus_map = corpus_map
 
     @handler
     async def run(self, query: str, ctx: WorkflowContext[QueryPlan]) -> None:
@@ -79,7 +84,7 @@ class PlannerExecutor(Executor):
             query: The user's question.
             ctx: Workflow context carrying the plan onward.
         """
-        await ctx.send_message(await plan_query(self._agent, query))
+        await ctx.send_message(await plan_query(self._agent, query, self._corpus_map))
 
 
 class RetrievalExecutor(Executor):
@@ -153,7 +158,10 @@ class ResponseExecutor(Executor):
             ctx: Workflow context, which this stage yields the final result to.
         """
         response = await generate_response(
-            self._agent, outcome.plan.original_query, outcome.documents
+            self._agent,
+            outcome.plan.original_query,
+            outcome.documents,
+            outcome.plan.out_of_domain,
         )
         await ctx.yield_output(
             PipelineResult(
@@ -235,7 +243,7 @@ class PolicyPipeline:
                 which means an executor stopped early without raising.
         """
         workflow = build_workflow(
-            PlannerExecutor(self._planner),
+            PlannerExecutor(self._planner, self._settings.planner_corpus_map),
             RetrievalExecutor(self._search_client, self._openai_client, self._settings),
             ResponseExecutor(self._response),
         )
@@ -290,7 +298,7 @@ def build_pipeline(
     """
     effort = settings.llm_reasoning_effort
     return PolicyPipeline(
-        build_planner(chat_client, effort),
+        build_planner(chat_client, effort, settings.planner_corpus_map),
         build_response_agent(chat_client, effort),
         search_client,
         openai_client,

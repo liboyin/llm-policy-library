@@ -119,7 +119,10 @@ def safe_fallback() -> GroundedResponse:
 
 
 async def generate_response(
-    agent: ResponseAgent, query: str, documents: list[RetrievedDocument]
+    agent: ResponseAgent,
+    query: str,
+    documents: list[RetrievedDocument],
+    out_of_domain: bool,
 ) -> GroundedResponse:
     """Answer a question from the retrieved controls, or fall back safely.
 
@@ -127,6 +130,10 @@ async def generate_response(
         agent: The Response Agent.
         query: The user's question.
         documents: The grounding set. Empty means nothing relevant was found.
+        out_of_domain: Whether the Planner refused the question structurally,
+            rather than retrieval coming back empty. It changes only the reason
+            logged: the user sees the same message either way, because from the
+            asker's side the two are the same answer.
 
     Returns:
         The grounded answer, or the safe fallback when `documents` is empty, in
@@ -139,7 +146,11 @@ async def generate_response(
             that no relevant control was found.
     """
     if not documents:
-        logger.info("safe fallback returned", extra={"query": query, "reason": "no documents"})
+        # The two reasons cost very differently — one searched the index and
+        # rejected everything it found, the other never searched at all — so a
+        # single reason value would make the fallback rate unreadable.
+        reason = "out of domain by plan" if out_of_domain else "no documents"
+        logger.info("safe fallback returned", extra={"query": query, "reason": reason})
         return safe_fallback()
 
     prompt = f"Question: {query}\n\nControls:\n\n{format_documents(documents)}"

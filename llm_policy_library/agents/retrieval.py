@@ -35,6 +35,19 @@ only, which makes `@search.score` a cosine similarity rescaled to 0-1. The Free
 tier therefore gives up BM25 keyword matching; measured against this corpus that
 costs little, because each document's embedded text is prefixed with its control
 ID, so `AC-2` still retrieves `ac-2` at rank one.
+
+A step may also name a control family, which becomes an OData `filter` on the
+same query. That is constrained search, not lookup: the mode, the floor, and the
+`kept`/`dropped` audit logging are untouched, so a filtered step is gated on the
+same score scale as an unfiltered one. Probed live on 2026-07-22 against the
+1,014-control index (azure-search-documents 12.0.0, Basic tier), which is what
+that claim rests on: filters bind before ranking, every hit still carries
+`@search.rerankerScore`, and a filter matching no document returns no rows rather
+than an error. The floor still does its work under a filter — restricting
+"account management and least privilege" to Media Protection left only one of
+five hits above 1.8, versus 2.90 for the unfiltered top hit — but that one
+survivor is also why the Planner is told to leave the filter off when it is
+unsure: a filter cannot rescue a control it has excluded.
 """
 
 import asyncio
@@ -111,7 +124,11 @@ def scoring_mode(settings: Settings) -> ScoringMode:
 
 
 def build_search_kwargs(
-    search_query: str, vector: list[float], mode: ScoringMode, top_k: int
+    search_query: str,
+    vector: list[float],
+    mode: ScoringMode,
+    top_k: int,
+    category: str | None = None,
 ) -> dict[str, Any]:
     """Build the keyword arguments for one `SearchClient.search` call.
 
@@ -123,6 +140,11 @@ def build_search_kwargs(
         vector: The embedding of `search_query`.
         mode: The active scoring mode.
         top_k: Documents to return.
+        category: A control family to restrict the search to, or None to search
+            the whole index. Must be a name `agents.planner.validated_categories`
+            admitted — the value is interpolated into an OData literal, and it is
+            a fixed twenty-name vocabulary rather than user text, so it is
+            validated at the boundary instead of escaped here.
 
     Returns:
         Keyword arguments for `SearchClient.search`.
@@ -141,6 +163,17 @@ def build_search_kwargs(
         "top": top_k,
         "select": list(SELECT_FIELDS),
     }
+    if category is not None:
+        # Doubling the apostrophe is OData's own escaping. The Planner already
+        # restricts the value to twenty catalog family names, none of which
+        # contains one (measured 2026-07-22), so this changes nothing today — but
+        # that vocabulary is model-generated and regenerated whenever the catalog
+        # commit moves, and `corpus_map.FamilyEntry.name` constrains its
+        # characters no further. The failure it forecloses is not a loud one: a
+        # stray apostrophe makes the service reject the syntax, and a crafted one
+        # returns HTTP 200 with the filter silently widened. Escaping here keeps
+        # that from depending on a promise made in another module.
+        kwargs["filter"] = "category eq '{}'".format(category.replace("'", "''"))
     if mode.semantic:
         kwargs["query_type"] = "semantic"
         kwargs["semantic_configuration_name"] = SEMANTIC_CONFIGURATION_NAME
@@ -248,7 +281,9 @@ async def retrieve_step(
         openai_client, settings.azure_openai_embedding_deployment, step.search_query
     )
     pager = await search_client.search(
-        **build_search_kwargs(step.search_query, vector, mode, settings.retrieval_top_k)
+        **build_search_kwargs(
+            step.search_query, vector, mode, settings.retrieval_top_k, step.category
+        )
     )
     rows = [row async for row in pager]
     documents = relevant_documents(rows, mode)
@@ -263,6 +298,10 @@ async def retrieve_step(
             "search_query": step.search_query,
             "semantic": mode.semantic,
             "threshold": mode.threshold,
+            # Null when the step searched every family. Without it the `dropped`
+            # list below reads as the whole corpus's verdict on the query, when a
+            # filtered step only ever saw one family of it.
+            "category": step.category,
             # One line per step, so summing this key across a correlation ID gives
             # the request's embeddings cost. It is billed against a different
             # quota than the chat tokens the Planner and Response Agent log.
@@ -290,6 +329,13 @@ async def retrieve_plan(
     three searches. Running them together keeps retrieval latency at roughly one
     step's, which is what the end-to-end latency budget is spent on.
 
+    A plan the Planner marked out of domain is not executed at all. The Planner
+    empties such a plan's steps, so the fan-out below would usually return `[]`
+    for it anyway; checking the flag rather than relying on that guarantees the
+    *embedding* call never happens either — the whole cost saving of refusing
+    structurally rather than by retrieving nothing — and holds even for a plan
+    that reaches here carrying both the flag and steps.
+
     Args:
         search_client: Client bound to the policy index.
         openai_client: Client for the embedding deployment.
@@ -297,8 +343,11 @@ async def retrieve_plan(
         plan: The plan to execute.
 
     Returns:
-        One result per step, in plan order.
+        One result per step, in plan order. Empty for an out-of-domain plan,
+        which the Response Agent turns into the safe fallback.
     """
+    if plan.out_of_domain:
+        return []
     return await asyncio.gather(
         *(retrieve_step(search_client, openai_client, settings, step) for step in plan.steps)
     )

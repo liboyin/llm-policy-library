@@ -150,9 +150,34 @@ async def test_generate_response_returns_the_fallback_without_calling_the_model(
     """A model given no documents and told to use only documents will invent one."""
     agent = agent_answering("should never run")
 
-    response = await testee.generate_response(agent, "What is the capital of France?", [])
+    response = await testee.generate_response(agent, "What is the capital of France?", [], False)
 
     assert response.is_fallback is True
+    agent.run.assert_not_awaited()
+
+
+async def test_generate_response_distinguishes_the_two_reasons_it_can_fall_back(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The two ways of falling back are logged with distinguishable reasons."""
+    # Both read identically to the user but cost differently: one searched the index
+    # and rejected everything it found, the other never searched. A single reason
+    # value would make the fallback rate unreadable -- and that rate is what D12 gates on.
+    agent = agent_answering("should never run")
+
+    with caplog.at_level(logging.INFO, logger=testee.__name__):
+        refused = await testee.generate_response(agent, "capital of France?", [], True)
+        empty = await testee.generate_response(agent, "capital of France?", [], False)
+
+    reasons = [
+        getattr(record, "reason")
+        for record in caplog.records
+        if record.message == "safe fallback returned"
+    ]
+    assert reasons == ["out of domain by plan", "no documents"]
+    # The user-visible answer is deliberately the same one either way.
+    assert refused.answer == empty.answer
+    assert refused.is_fallback is True
     agent.run.assert_not_awaited()
 
 
@@ -160,7 +185,7 @@ async def test_generate_response_grounds_the_prompt_in_the_retrieved_controls() 
     """The model may only see the controls retrieval approved, plus the question."""
     agent = agent_answering("Per [ac-2], accounts are managed.")
 
-    await testee.generate_response(agent, "access control?", [make_document("ac-2")])
+    await testee.generate_response(agent, "access control?", [make_document("ac-2")], False)
 
     prompt = agent.run.await_args.args[0]
     assert "Question: access control?" in prompt
@@ -171,7 +196,7 @@ async def test_generate_response_reports_only_citations_that_were_retrieved() ->
     """An invented control must not be presented to the user as a source."""
     agent = agent_answering("Per [ac-2] and [zz-99].")
 
-    response = await testee.generate_response(agent, "q", [make_document("ac-2")])
+    response = await testee.generate_response(agent, "q", [make_document("ac-2")], False)
 
     assert response.citations == ["ac-2"]
     assert response.is_fallback is False
@@ -184,7 +209,7 @@ async def test_generate_response_logs_an_invented_citation_as_a_grounding_violat
     agent = agent_answering("Per [zz-99].")
 
     with caplog.at_level(logging.WARNING, logger=testee.__name__):
-        response = await testee.generate_response(agent, "q", [make_document("ac-2")])
+        response = await testee.generate_response(agent, "q", [make_document("ac-2")], False)
 
     assert response.citations == []
     assert any(
@@ -196,7 +221,7 @@ async def test_generate_response_keeps_the_answer_verbatim() -> None:
     """The user reads the model's prose; only the citation list is filtered."""
     agent = agent_answering("  Per [ac-2], accounts are managed.  ")
 
-    response = await testee.generate_response(agent, "q", [make_document("ac-2")])
+    response = await testee.generate_response(agent, "q", [make_document("ac-2")], False)
 
     assert response.answer == "Per [ac-2], accounts are managed."
 
@@ -206,7 +231,7 @@ async def test_generate_response_raises_on_an_empty_answer() -> None:
     agent = agent_answering("   ")
 
     with pytest.raises(testee.ResponseError, match="empty answer"):
-        await testee.generate_response(agent, "q", [make_document("ac-2")])
+        await testee.generate_response(agent, "q", [make_document("ac-2")], False)
 
 
 async def test_generate_response_logs_the_chat_tokens_the_run_billed(
@@ -216,7 +241,7 @@ async def test_generate_response_logs_the_chat_tokens_the_run_billed(
     agent = agent_answering("See [ac-2].", input_tokens=3612, output_tokens=241)
 
     with caplog.at_level(logging.INFO, logger=testee.__name__):
-        await testee.generate_response(agent, "q", [make_document("ac-2")])
+        await testee.generate_response(agent, "q", [make_document("ac-2")], False)
 
     record = next(record for record in caplog.records if record.message == "answer generated")
     assert getattr(record, "input_tokens") == 3612
@@ -232,7 +257,7 @@ async def test_generate_response_logs_zero_tokens_when_usage_is_absent(
     agent.run.return_value.usage_details = None
 
     with caplog.at_level(logging.INFO, logger=testee.__name__):
-        await testee.generate_response(agent, "q", [make_document("ac-2")])
+        await testee.generate_response(agent, "q", [make_document("ac-2")], False)
 
     record = next(record for record in caplog.records if record.message == "answer generated")
     assert getattr(record, "input_tokens") == 0

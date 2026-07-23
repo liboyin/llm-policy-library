@@ -131,13 +131,27 @@ class CapturingContext:
 async def test_planner_executor_forwards_the_plan_it_was_given() -> None:
     """The Planner executor adapts the agent to the workflow; it must not reinterpret it."""
     plan = make_plan()
-    executor = testee.PlannerExecutor(MagicMock())
+    executor = testee.PlannerExecutor(MagicMock(), False)
     context = CapturingContext()
 
     with patch.object(testee, "plan_query", AsyncMock(return_value=plan)):
         await executor.run("What controls apply to API security?", context)  # type: ignore[arg-type]
 
     assert context.sent == [plan]
+
+
+async def test_planner_executor_tells_the_planner_whether_the_map_is_on() -> None:
+    """The executor must pass the map flag through to the Planner."""
+    # The flag decides whether the model's category and out-of-domain answers are
+    # honoured, so an executor that dropped it would build the agent WITH the map
+    # and then discard everything the map bought.
+    plan_query = AsyncMock(return_value=make_plan())
+    executor = testee.PlannerExecutor(MagicMock(), True)
+
+    with patch.object(testee, "plan_query", plan_query):
+        await executor.run("q", CapturingContext())  # type: ignore[arg-type]
+
+    assert plan_query.await_args_list[0].args[2] is True
 
 
 async def test_retrieval_executor_deduplicates_across_steps_before_grounding() -> None:
@@ -192,9 +206,27 @@ async def test_response_executor_asks_the_agent_the_users_original_question() ->
     assert generate.await_args_list[0].args[1] == "What controls apply to API security?"
 
 
+async def test_response_executor_tells_the_agent_why_the_grounding_set_is_empty() -> None:
+    """The executor must tell the Response Agent why the grounding set is empty."""
+    # `out_of_domain` reaches the Response Agent only through the plan the outcome
+    # carries, so losing it here collapses a structural refusal into "retrieval
+    # found nothing" in the one log line that separates them.
+    plan = QueryPlan(original_query="capital of France?", steps=[], out_of_domain=True)
+    outcome = RetrievalOutcome(plan=plan, results=[], documents=[])
+    generate = AsyncMock(
+        return_value=GroundedResponse(answer="a", citations=[], is_fallback=True)
+    )
+    executor = testee.ResponseExecutor(MagicMock())
+
+    with patch.object(testee, "generate_response", generate):
+        await executor.run(outcome, CapturingContext())  # type: ignore[arg-type]
+
+    assert generate.await_args_list[0].args[3] is True
+
+
 def test_build_workflow_starts_at_the_planner() -> None:
     """Retrieval before planning would search on the raw question and skip decomposition."""
-    planner = testee.PlannerExecutor(MagicMock())
+    planner = testee.PlannerExecutor(MagicMock(), False)
     retrieval = testee.RetrievalExecutor(MagicMock(), MagicMock(), make_settings())
     response = testee.ResponseExecutor(MagicMock())
 
@@ -210,7 +242,7 @@ async def test_answer_query_runs_the_three_agents_in_order_and_returns_the_resul
     documents = [make_document("ac-2")]
     answer = GroundedResponse(answer="Per [ac-2].", citations=["ac-2"], is_fallback=False)
 
-    async def fake_plan_query(_agent: Any, _query: str) -> QueryPlan:
+    async def fake_plan_query(_agent: Any, _query: str, _corpus_map: bool) -> QueryPlan:
         calls.append("plan")
         return plan
 
@@ -243,7 +275,7 @@ async def test_answer_query_logs_the_question_and_its_full_answer(
     plan = make_plan()
     answer = GroundedResponse(answer="Per [ac-2].", citations=["ac-2"], is_fallback=False)
 
-    async def fake_plan_query(_agent: Any, _query: str) -> QueryPlan:
+    async def fake_plan_query(_agent: Any, _query: str, _corpus_map: bool) -> QueryPlan:
         return plan
 
     async def fake_retrieve_plan(*_args: Any) -> list[RetrievalResult]:
@@ -273,7 +305,7 @@ async def test_answer_query_serves_concurrent_queries_without_serializing_stages
     answer = GroundedResponse(answer="Per [ac-2].", citations=["ac-2"], is_fallback=False)
     events: list[str] = []
 
-    async def slow_plan_query(_agent: Any, query: str) -> QueryPlan:
+    async def slow_plan_query(_agent: Any, query: str, _corpus_map: bool) -> QueryPlan:
         # Record the overlap: if the planner executors were shared, the first
         # query would hold the stage's lock start-to-end and the second's
         # "start" could not appear before the first's "end".
@@ -314,7 +346,7 @@ async def test_answer_query_returns_the_safe_fallback_when_nothing_clears_the_fl
     """An off-topic question must reach the user as a refusal, not an invented control."""
     plan = make_plan("What is the capital of France?")
 
-    async def fake_plan_query(_agent: Any, _query: str) -> QueryPlan:
+    async def fake_plan_query(_agent: Any, _query: str, _corpus_map: bool) -> QueryPlan:
         return plan
 
     async def fake_retrieve_plan(*_args: Any) -> list[RetrievalResult]:
@@ -339,6 +371,49 @@ async def test_answer_query_returns_the_safe_fallback_when_nothing_clears_the_fl
     chat_agent.run.assert_not_awaited()
 
 
+async def test_answer_query_refuses_an_out_of_domain_question_without_touching_azure() -> None:
+    """An out-of-domain question is refused end to end without touching Azure."""
+    # The phase's headline behavior. Only `plan_query` is faked: retrieval and the
+    # Response Agent are real, so this asserts the pipeline genuinely short-circuits
+    # rather than that two mocked stages claim it did.
+    plan = QueryPlan(original_query="What is the capital of France?", steps=[], out_of_domain=True)
+    # Recorded, not ignored: `answer_query` builds the executor per query, and a
+    # hardcoded flag there would leave the map in the prompt while every answer it
+    # bought was discarded -- invisible to a fake that drops its third argument.
+    seen_flags: list[bool] = []
+
+    async def fake_plan_query(_agent: Any, _query: str, corpus_map: bool) -> QueryPlan:
+        seen_flags.append(corpus_map)
+        return plan
+
+    chat_agent = MagicMock()
+    chat_agent.run = AsyncMock()
+    search_client = MagicMock()
+    search_client.search = AsyncMock(side_effect=AssertionError("the index must not be searched"))
+    openai_client = MagicMock()
+    openai_client.embeddings.create = AsyncMock(
+        side_effect=AssertionError("an out-of-domain question must cost no embedding")
+    )
+
+    with (
+        patch.object(testee, "plan_query", fake_plan_query),
+        patch.object(testee, "build_response_agent", lambda *_: chat_agent),
+    ):
+        pipeline = testee.build_pipeline(
+            make_settings(planner_corpus_map=True), MagicMock(), openai_client, search_client
+        )
+        result = await pipeline.answer_query("What is the capital of France?")
+
+    assert result.response.is_fallback is True
+    assert result.response.answer == get_prompt("safe_fallback_message")
+    assert result.documents == []
+    assert result.results == []
+    assert seen_flags == [True], "answer_query must pass the configured flag, not a constant"
+    chat_agent.run.assert_not_awaited()
+    search_client.search.assert_not_awaited()
+    openai_client.embeddings.create.assert_not_awaited()
+
+
 async def test_answer_query_raises_when_the_workflow_yields_no_result() -> None:
     """A workflow that stops early must fail loudly, not return an empty answer."""
     workflow = MagicMock()
@@ -350,6 +425,18 @@ async def test_answer_query_raises_when_the_workflow_yields_no_result() -> None:
     with patch.object(testee, "build_workflow", MagicMock(return_value=workflow)):
         with pytest.raises(testee.OrchestrationError, match="no result"):
             await pipeline.answer_query("q")
+
+
+def test_build_pipeline_builds_the_planner_from_the_configured_map_setting() -> None:
+    """The configured map setting must reach the agent builder."""
+    # `PLANNER_CORPUS_MAP` is the A/B lever: a pipeline that ignored it would run
+    # both arms of the Phase 10 comparison identically and report no difference.
+    with patch.object(testee, "build_planner", MagicMock()) as build_planner:
+        testee.build_pipeline(
+            make_settings(planner_corpus_map=True), MagicMock(), MagicMock(), MagicMock()
+        )
+
+    assert build_planner.call_args.args[2] is True
 
 
 async def test_open_pipeline_pins_chat_and_embeddings_to_their_own_api_versions() -> None:

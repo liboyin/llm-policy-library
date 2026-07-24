@@ -55,7 +55,7 @@ All non-trivial changes that touch code, test, or configuration MUST go through 
 
 A finding's diagnosis and its proposed remedy MUST be validated separately, wherever the finding came from — a correct diagnosis does not imply a correct fix, and suggested one-liners have repeatedly been worse than the defect they named. Reproduce the problem, then measure the remedy against it; accepting a remedy is authoring it. Declined or superseded remedies need a measured reason, recorded.
 
-The `/adversarial-review` skill (`.claude/skills/adversarial-review/SKILL.md`) owns the review procedure: the caller context it requires, the questions it scrutinizes with, and its report format. Call it as a function on the current dirty tree and expect a triaged findings report without code changes.
+The `/adversarial-review` skill (`.agents/skills/adversarial-review/SKILL.md`) owns the review procedure: the caller context it requires, the questions it scrutinizes with, and its report format. Call it as a function on the current dirty tree and expect a triaged findings report without code changes.
 
 The main agent remains accountable for the execute-review loop:
 

@@ -21,9 +21,10 @@ CAPITALIZED requirement words have the meanings defined by BCP 14 (RFC 2119 and 
 - Document ownership:
     - `TASK.md` describes the end goals of this project.
     - `TODO.md` is the phased execution plan and log. Its status blocks record what was actually done and decided.
-    - `README.md` describes project structure, architecture, dataflow, and build & test procedures.
-    - `docs/architecture.md` is the system design spec — agent interaction flow, determinism & grounding, security, and scalability.
+    - `README.md` is the project overview and operating guide, with links to canonical docs.
+    - `docs/architecture.md` owns current-state system design and rationale.
     - `docs/azure-setup.md` is the Azure provisioning guide.
+    - `samples/evaluation_report.md` and `samples/loadtest_results.md` own empirical methods and results; other documents MAY summarize and link.
 - New or changed non-test functions and methods MUST have Google-style docstrings; unit-test functions MUST have one-line docstrings.
 
 # Implementation Guidelines

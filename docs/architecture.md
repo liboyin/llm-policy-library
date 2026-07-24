@@ -1,41 +1,47 @@
 # Architecture
 
 A multi-agent RAG system that answers enterprise security-policy questions from the NIST
-SP 800-53 Rev 5 control catalog, grounded and auditable end to end. This document covers
-system design, the agent interaction flow, determinism & grounding, security, scalability
-(including the 5M-word production design and the 50-user SLA analysis), governance, and
-operability. Setup lives in [azure-setup.md](azure-setup.md); running it lives in the
-[README](../README.md).
+SP 800-53 Rev 5 control catalog, grounded and auditable end to end. This is the canonical
+current-state system design: components and boundaries, dataflow and agent interaction,
+design rationale and invariants, determinism and grounding, security, scalability,
+governance, and operability.
+
+Implementation history and superseded decisions live in [TODO.md](../TODO.md). Provisioning
+lives in [azure-setup.md](azure-setup.md), and setup and operating commands live in the
+[README](../README.md). The detailed empirical records are the
+[evaluation report](../samples/evaluation_report.md) and
+[load-test report](../samples/loadtest_results.md); this specification uses their findings
+only where they affect the design.
 
 ## System design
 
-```
-Browser (static page)  ─┐
-CLI (same pipeline)     ├─► FastAPI  ──►  PolicyPipeline ──────────────────────────┐
-Any HTTP client        ─┘   POST /query     │                                      │
-                                            ▼                                      ▼
-                              Planner ──► Retrieval ──► Response          Azure OpenAI
-                              (chat)      (no LLM)      (chat)          gpt-5-mini (pinned)
-                                             │                        text-embedding-3-small
-                                             ▼
-                                     Azure AI Search
-                                (hybrid + semantic rerank)
+```text
+Browser (static page) ──┐
+Any HTTP client ────────┴─► FastAPI ──┐
+                                      ├─► PolicyPipeline ──────────────────────────┐
+CLI ──────────────────────────────────┘       │                                     │
+                                              ▼                                     ▼
+                                Planner ──► Retrieval ──► Response         Azure OpenAI
+                                (chat)      (no LLM)      (chat)         gpt-5-mini (pinned)
+                                               │                       text-embedding-3-small
+                                               ▼
+                                       Azure AI Search
+                                  (hybrid + semantic rerank)
 ```
 
-One code path answers every question: the browser page and the CLI are both clients of the
-same `PolicyPipeline` the API wraps. Azure clients are opened once per process, never per
-request; the pipeline instance holds no per-run state — it builds a fresh MAF workflow and
-executors per query — so one instance serves concurrent queries.
+One code path answers every question: the API and CLI both drive the same `PolicyPipeline`;
+the browser is a client of the API. Azure clients are opened once per process, never per
+request. The pipeline instance holds no per-run workflow state — it builds a fresh
+Microsoft Agent Framework workflow and executors per query — so one instance serves
+concurrent queries.
 Deployment is a plain ASGI app — locally under `uvicorn`, and on Azure App Service via the
 GitHub Actions workflow in [.github/workflows/](../.github/workflows/).
 
 ## Agent interaction flow
 
-The agents run on the **Microsoft Agent Framework** (MAF) — the framework TASK.md names.
-The project started on it, took a Phase 5.5 detour to PydanticAI, and returned to it in
-Phase 9 (see [TODO.md](../TODO.md)). They communicate through typed Pydantic messages, not
-conversation — each edge is validated, so a stage cannot reinterpret what the previous one
-produced, and the chain of messages **is** the audit record:
+The agents run on the **Microsoft Agent Framework** (MAF). They communicate through typed
+Pydantic messages, not conversation — each edge is validated, so a stage cannot reinterpret
+what the previous one produced, and the chain of messages **is** the audit record:
 
 1. `str` → **Planner Agent** → `QueryPlan`. A structured-output chat call decomposes the
    question into 1–3 natural-language search steps (`PlanStep{search_query, purpose}`);
@@ -48,58 +54,52 @@ produced, and the chain of messages **is** the audit record:
    the measured score bands are in `agents/retrieval.py`'s docstring) — and survivors are
    deduplicated into one grounding set.
 
-   `RETRIEVAL_TOP_K` (default 5) is TASK.md's top-3–5 window, and it applies **per search
-   step**, not per question. A multi-step plan therefore grounds in more than five
-   controls: across the committed evaluation's 13 on-topic queries the merged set — after
-   the relevance floor and deduplication — ran from 5 controls (single-step plans) to 14
-   (a three-step plan), and 9 of the 13 exceeded 5. That is decomposition working as
-   intended rather than a widened retrieval window: each search returns its own top 5, and
-   a question spanning access control *and* logging legitimately needs both families. The
-   per-step window is what bounds cost and latency; the union is what the answer is
-   grounded in, and every control in it is cited or discarded on the evidence of the
-   audit trail.
+   `RETRIEVAL_TOP_K` (default 5) applies **per search step**, not per question. A
+   multi-step plan can therefore ground in more than five controls: the per-step window
+   bounds each search's cost and latency, while the merged set preserves evidence from
+   each concern in a multi-family question.
 3. `RetrievalOutcome` → **Response Agent** → `PipelineResult`. If the grounding set is
    empty, the fixed safe-fallback message is returned **without calling a chat model**.
    Otherwise a chat call answers strictly from the supplied controls with inline `[ac-2]`
    citations, and every citation is checked against the retrieved IDs after the call.
 
-### The Microsoft Agent Framework
+### Retrieval modes and relevance invariant
 
-TASK.md requirement 2 names the Microsoft Agent Framework outright, and "agent framework
-usage" is 25 % of the assessment — so MAF is a compliance requirement, not a free choice.
-The system was built on it through Phase 3, took a Phase 5.5 detour to PydanticAI, and was
-migrated back in Phase 9. Orchestration is a MAF `WorkflowBuilder` wiring
-Planner → Retrieval → Response `Executor`s that exchange the typed messages above; that
-`Workflow` is what "demonstrate clear orchestration" (TASK.md's wording) is demonstrated
-with. The three concerns that drove the Phase 5.5 detour, and how the return handles them:
+`AZURE_SEARCH_SEMANTIC_RANKER` selects a complete retrieval mode, not just an optional
+post-processing step:
 
-- **The dependency conflict is gone.** `agent-framework-core` + `agent-framework-openai`
-  (not the `agent-framework` meta-package, which drags in ~40 unused integrations) resolve
-  cleanly against `azure-search-documents` 12.0.0 and the rest of the runtime deps — the
-  version conflict that existed at Phase 5.5 no longer does (re-verified at migration time).
-- **Per-run state is handled by building fresh per query.** A MAF `Workflow` carries one
-  run's state and rejects a concurrent second run, and each `Executor` serializes its
-  handler behind a per-instance `asyncio.Lock`. `PolicyPipeline.answer_query` therefore
-  builds a fresh workflow **and** fresh executors on each call (~0.4 ms), over the two
-  agents and the Azure clients, which are per-call stateless and shared safely — so
-  overlapping requests never contend on a shared lock. (Sharing the executors, as the
-  pre-detour design did, was found under review to serialize concurrent queries stage by
-  stage; the load test would have shed 504s. It was never load-tested on MAF before, so the
-  defect was latent — see [TODO.md](../TODO.md) Phase 9.)
-- **The Planner still enforces its output shape at the model.** MAF's structured outputs
-  (`response_format` on the Planner's options) give the same model-side JSON-schema
-  enforcement, so a plan's *shape* is guaranteed by the provider, not parsed out of prose.
+- `true` uses hybrid vector + BM25 retrieval with semantic reranking and gates results on
+  `@search.rerankerScore` via `MIN_RERANKER_SCORE`.
+- `false` uses vector-only retrieval and gates results on vector `@search.score` via
+  `MIN_VECTOR_SCORE`.
 
-What TASK.md specifies of the agent layer is unchanged across every framework the project
-has used: a Planner, a Retrieval, and a Response agent, communicating through structured
-data under clear orchestration. Every edge is a validated Pydantic message, so the contract
-is enforced by the message types regardless of the library carrying them.
+The invariant is that retrieval filters on the same score scale that determined the
+ranking. The two scores are not comparable, so their thresholds cannot be shared. The
+Free-tier path is vector-only rather than hybrid-without-reranking because Azure's fused
+RRF score is rank-relative and does not provide a stable absolute relevance floor. This
+keeps the empty-grounding fallback meaningful in either mode.
+
+### Workflow and concurrency
+
+A MAF `WorkflowBuilder` wires Planner → Retrieval → Response `Executor`s. The project
+depends on `agent-framework-core` and `agent-framework-openai`, not the integration-heavy
+meta-package.
+
+A `Workflow` carries one run's state, and each `Executor` serializes its handler behind a
+per-instance lock. `PolicyPipeline.answer_query` therefore builds a fresh workflow **and**
+fresh executors for every query. The agents and Azure clients they wrap are per-call
+stateless and shared safely, so overlapping requests do not contend on a shared executor.
+Client lifetime remains process-scoped.
+
+The Planner uses MAF structured output (`response_format`) to enforce the plan's JSON
+schema at the model boundary. Pydantic validation then enforces the same contract between
+workflow stages.
 
 ## Determinism & grounding
 
-Every currently deployable Azure OpenAI chat model is a reasoning model that rejects
-`temperature`, `top_p`, and `seed` (decision D7 in [TODO.md](../TODO.md)), so determinism
-is **grounding-enforced rather than sampling-based**:
+The configured `gpt-5-mini` deployment does not use `temperature`, `top_p`, or `seed`
+(decision D7 in [TODO.md](../TODO.md)), so determinism is **grounding-enforced rather
+than sampling-based**:
 
 - **Structured outputs** — the Planner returns a JSON schema, not prose to parse.
 - **Pinned versions** — the model version is pinned on the deployment (`gpt-5-mini`
@@ -229,34 +229,32 @@ tokens/word) changes ingestion, not the serving architecture:
   keeps a stable citable ID plus `title`/`category`/source-document fields — the citation
   unit is the retrieval unit, which is what citation-enforced grounding requires.
 - **Index sizing.** ~7M tokens / 400 ≈ **18K chunks**; vectors at 1,536 × 4 bytes ≈
-  **110 MB**, total index well under 1 GB with BM25 postings — comfortably inside Basic
-  (15 GB) and nowhere near S1. Partitions are not the lever at this size; one is enough.
-- **Replicas** are the lever, for QPS and availability: 2 for Search's read SLA, scaling
-  with measured QPS (below).
-- **Embedding cost.** `text-embedding-3-small` at ~$0.02/1M tokens ≈ **$0.14 per full
-  re-index** — rebuilding the index is effectively free; the OSCAL fetch and upload dominate.
+  **110 MB** before index overhead and BM25 postings. Partition storage is not the
+  limiting dimension at this size.
+- **Replicas** are the serving-side lever for query throughput and availability; scale
+  them from measured QPS.
+- **Embedding work.** A full rebuild embeds approximately 7M tokens. Its monetary cost
+  should be recalculated from the deployment's current price rather than embedded as a
+  long-lived architecture constant.
 
-### The 50-user SLA (measured at 10, extrapolated to 50)
+### Capacity implications for the 50-user target
 
-Full analysis with artifacts: [samples/loadtest_results.md](../samples/loadtest_results.md).
-The SLA target is 50 concurrent users, p90 ≤ 15 s, p99 ≤ 30 s (decision D3: scaled test +
-extrapolation).
+The canonical measurements, workload, arithmetic, and limitations are in the
+[load-test report](../samples/loadtest_results.md). The design target is 50 concurrent
+users at p90 ≤ 15 s and p99 ≤ 30 s (decision D3: scaled test + extrapolation).
 
-- **Measured at 10 users** (6 min, zero HTTP errors): on-topic p90 **9.4 s**, p99
-  **12.0 s** — met with headroom. Cost per on-topic request: 1,931 chat tokens over 2.00
-  chat calls, 1.79 searches.
+- **The 10-user evidence meets the latency target**: the committed run measured on-topic
+  p90 **9.4 s** and p99 **12.0 s**, with no HTTP errors.
 - **The binding constraint at 50 users is chat RPM, not TPM and not latency.** The
-  deployment grants 1 RPM per 1,000 TPM and a chat call spends ~900 tokens (blended), so
-  RPM exhausts first. A calibrated closed-loop model puts 50 users at ≈5.3 RPS ⇒ **550 chat
-  RPM against a 150 RPM quota (3.7× over)** ⇒ provision **≈600K TPM**. Search reaches
-  ≈8.3 QPS ⇒ add replicas (start at 2) and re-measure.
+  report's calibrated model puts 50 users at ≈5.3 RPS and **550 chat RPM** against the
+  measured deployment quota of 150 RPM. At that deployment's TPM-to-RPM ratio, the design
+  needs **≈600K TPM**. Search reaches ≈8.3 QPS, so replicas are the initial scaling lever.
 - **Whether p90/p99 still hold at 50 users is deliberately left open**: the extrapolation
   assumes constant response time, so it cannot prove it, and the current quota caps any
   honest run at ~14 users. Re-measure once quota exists.
-- **Levers**: skip the Planner on simple queries via a cheap pre-classifier (50% of plans
-  are single-step; the Planner is 24% of latency and half of an on-topic request's RPM — a
-  gate skipping it on that traffic cuts RPM demand ~30%, 1.73→~1.2 calls/request); PTU if
-  p99 must be contractual; streaming helps perceived latency only.
+- **Capacity levers**: avoid the Planner call on safely classified simple queries to reduce
+  the binding RPM demand; use provisioned throughput if the tail must be contractual;
+  stream responses only for perceived latency, not as a change to complete-response p90.
 
 ## Governance controls
 
@@ -265,18 +263,19 @@ extrapolation).
   latency — all sharing a correlation ID that is also echoed to the client as
   `X-Correlation-ID`. A fallback is auditable: the trail shows what was rejected and by how
   much (and thresholds are retuned against it).
-- **Citation-enforced grounding** and the **safe fallback**, as above. One honest caveat,
-  measured under load: the fallback is probabilistic, not guaranteed — in a low
-  single-digit percent of out-of-domain queries the Planner's search phrase retrieves
-  something above the floor, and the Response Agent answers with a correct prose refusal
-  but `is_fallback=false`. A deterministic pre-Planner domain check is the designed fix
-  (deferred; TODO.md Phase 5.5).
+- **Citation-enforced grounding** and the **safe fallback**, as above. The current fallback
+  is triggered by an empty grounding set, not an independent domain decision. The load
+  evidence therefore includes out-of-domain questions whose generated search happened to
+  clear the relevance floor: the Response Agent refused in prose, but
+  `is_fallback=false`. The detailed observations live in the
+  [load-test report](../samples/loadtest_results.md); a Planner-level structural domain
+  decision is proposed, but not implemented, in [TODO.md](../TODO.md).
 - **Evaluation gate.** A 15-query hand-labeled golden set scores retrieval with
   deterministic recall/NDCG@5 and answers with two LLM judges (faithfulness, relevancy),
-  plus a hard citation-validity check and fallback checks. Committed run: faithfulness
-  5.0/5, relevancy 5.0/5, zero invented citations. Prompts live in the version-controlled
-  store, so a prompt change is a reviewable diff that can be re-scored against the golden
-  set before it ships.
+  plus a hard citation-validity check and fallback checks. Prompts live in the
+  version-controlled store, so a prompt change is a reviewable diff that can be re-scored
+  against the golden set before it ships. The
+  [evaluation report](../samples/evaluation_report.md) owns the current results.
 
 ## Operability: zero-downtime reindex
 

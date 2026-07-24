@@ -1,11 +1,17 @@
 """The corpus map: one routing abstract per NIST SP 800-53 control family.
 
 The Planner otherwise plans blind. It writes search queries without ever having
-seen what the corpus contains, which is why it cannot filter a search to a family
-that exists, and why it can only discover that a question is out of domain by
-searching for it and finding nothing. The map is the context that fixes both: a
-~1K-token block naming all twenty control families and what each one covers,
-small enough to prefix every planner call.
+seen what the corpus contains, so it can only discover that a question is out of
+domain by searching for it and finding nothing. The map is the context that fixes
+that: a block naming all twenty control families and what each one covers (~899
+tokens; ~1,053 once its two routing rules are included), small enough to prefix
+every planner call.
+
+The map was also meant to let the Planner filter a search to one family. That
+half is **switched off**: measured in Phase 10's A/B, filtering cost recall and
+failed the phase's acceptance gate, so the entries serve routing-by-refusal only
+(see `agents.planner`). The abstracts are still written to discriminate between
+families, because that is what the refusal judgement rests on.
 
 An entry's goal is **routing discrimination, not compression**. It succeeds when
 questions that belong to its family reach it and questions that do not stay away;
@@ -35,8 +41,10 @@ from pydantic import BaseModel, ConfigDict, Field
 MAP_FILENAME: Final = "corpus_map.json"
 
 # An abstract's hard ceiling, and the guarantee this artifact carries. At ~200
-# characters (~50 tokens) the twenty entries cost the Planner ~1K tokens of
-# context on every call, which is the budget this phase was sized against.
+# characters (~45 tokens) the twenty entries render to ~899 tokens (measured,
+# o200k_base); with the two routing rules wrapped around them the Planner pays
+# ~1,053 tokens of context on every call, which is the budget this phase was
+# sized against.
 # Enforced here, on the schema, rather than only in the generator: the cap is a
 # property of the map the Planner reads, so a map edited by hand instead of
 # regenerated must fail to load rather than quietly widen every planner prompt.
@@ -64,8 +72,9 @@ class FamilyEntry(BaseModel):
 
     Attributes:
         name: The family name, exactly as the catalog's OSCAL group titles it —
-            which is also exactly what the index's `category` field holds, so the
-            Planner can name it in a filter and have the filter match.
+            which is also exactly what the index's `category` field holds. That
+            equality is what a re-enabled filter would rely on to match; no filter
+            uses it today, since `agents.planner` clears every category.
         control_count: How many live controls and enhancements the family holds.
             Rendered into the map so the Planner can see a family's weight.
         abstract: What the family covers, written for routing: one line, within
@@ -121,9 +130,12 @@ def load_map() -> CorpusMap:
 def family_names() -> list[str]:
     """Return every family name in the map, in catalog order.
 
-    This is the Planner's fixed vocabulary: a category it proposes is valid only
-    if it appears here, which is what keeps a hallucinated family name out of an
-    Azure AI Search filter.
+    This is the vocabulary a category filter would be validated against: a category
+    is legitimate only if it appears here, which is what keeps a hallucinated family
+    name out of an Azure AI Search filter. **Nothing calls it on the serving path
+    today** — `agents.planner` clears every category rather than validating one,
+    because filtering measured as a recall regression in Phase 10's A/B. It is the
+    boundary a Phase 11 tier-2 filter would re-enable through, not a live check.
 
     Returns:
         The family names.

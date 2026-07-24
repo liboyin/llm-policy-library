@@ -7,15 +7,16 @@ citation-bearing answer with Azure OpenAI.
 
 - [TASK.md](TASK.md) — the goals this project implements.
 - [TODO.md](TODO.md) — the phased execution plan, the resolved design decisions
-  (D1–D7), and each phase's verified status.
+  (D1–D14), and each phase's verified status.
 - [docs/architecture.md](docs/architecture.md) — system design, agent interaction flow,
   determinism & grounding, security, scalability (the 5M-word design and the 50-user
   SLA analysis), governance, and the zero-downtime reindex design.
 
-> **Status:** complete. Phases 0–7 are delivered; Phase 8 (alternative approaches) was
-> deliberately not executed. A demo deployment runs on Azure App Service at
-> <https://llm-policy-library.azurewebsites.net/> (until the assessment resources are
-> torn down).
+> **Status:** the assessment deliverable is complete (Phases 0–7; Phase 8 deliberately not
+> executed). Work continued past it: Phase 9 returned orchestration to the Microsoft Agent
+> Framework, and Phase 10 added the Planner's corpus map. A demo deployment runs on Azure
+> App Service at <https://llm-policy-library.azurewebsites.net/> (until the assessment
+> resources are torn down).
 
 ## Project structure
 
@@ -29,6 +30,8 @@ citation-bearing answer with Azure OpenAI.
 | [llm_policy_library/models.py](llm_policy_library/models.py) | The typed messages the agents exchange |
 | [llm_policy_library/agents/](llm_policy_library/agents/) | Planner, Retrieval, and Response agents, plus the two LLM judges |
 | [llm_policy_library/prompts.json](llm_policy_library/prompts.json) | The version-controlled prompt store ([prompts.py](llm_policy_library/prompts.py) loads it) |
+| [llm_policy_library/corpus_map.json](llm_policy_library/corpus_map.json) | The corpus map: one routing abstract per control family ([corpus_map.py](llm_policy_library/corpus_map.py) loads it) |
+| [llm_policy_library/build_map.py](llm_policy_library/build_map.py) | `python -m llm_policy_library.build_map` — regenerates the map from the pinned catalog |
 | [llm_policy_library/orchestrator.py](llm_policy_library/orchestrator.py) | `PolicyPipeline` — wires the three agents together |
 | [llm_policy_library/api.py](llm_policy_library/api.py) | FastAPI service — `POST /query`, `GET /healthz`, `GET /` (the frontend) |
 | [llm_policy_library/rate_limit.py](llm_policy_library/rate_limit.py) | Token-bucket request budgets — what bounds the bill on a public, unauthenticated endpoint |
@@ -37,7 +40,7 @@ citation-bearing answer with Azure OpenAI.
 | [llm_policy_library/evaluation.py](llm_policy_library/evaluation.py) | Evaluation harness: golden-set metrics, citation check, Markdown report |
 | [evaluation/](evaluation/) | The golden set (`golden_set.json`) and the runner (`run_eval.py`) |
 | [loadtest/](loadtest/) | Locust load test (`locustfile.py`), serial baseline, and the tested pass/fail logic (`checks.py`) |
-| [samples/](samples/) | Sample execution outputs: smoke test, evaluation report, load-test artifacts |
+| [samples/](samples/) | Sample execution outputs: smoke test, evaluation report, load-test artifacts, and the corpus-map A/B evidence (`corpus_map_ab.md`) |
 | [tests/](tests/) | Unit tests; no test performs a live Azure call |
 | [docs/](docs/) | [azure-setup.md](docs/azure-setup.md) (provisioning) and [architecture.md](docs/architecture.md) |
 | [.github/workflows/](.github/workflows/) | CI/CD — deploys `main` to Azure App Service |
@@ -84,13 +87,27 @@ Three Microsoft Agent Framework agents run as a sequential pipeline — a `Workf
 chain built fresh per query; every edge is a validated Pydantic message, so a stage cannot
 quietly reinterpret what the previous one produced:
 
-**Planner** (chat, structured output: 1–3 search steps) → **Retrieval** (no LLM: embed,
-search, apply the relevance floor, deduplicate) → **Response** (chat, prose with inline
-`[ac-2]` citations — or the safe fallback, without a chat call, when nothing relevant was
-retrieved).
+**Planner** (chat, structured output: 1–3 search steps — or zero, when it refuses the question
+structurally) → **Retrieval** (no LLM: embed, search, apply the relevance floor, deduplicate) →
+**Response** (chat, prose with inline `[ac-2]` citations — or the safe fallback, without a chat
+call, when nothing relevant was retrieved).
+
+The Planner is given a **corpus map**: all twenty NIST SP 800-53 control families and what each
+covers, so it does not plan blind — ~1,053 tokens of prompt with its routing rules included. Its payoff is a **structural refusal
+path**: when the Planner judges that no family covers the question, the pipeline skips retrieval
+entirely and serves the fixed fallback, instead of searching and happening to find nothing. The
+judgement is the model's, so it is not a guaranteed classifier — what is deterministic is what
+follows it (no search, no Response call, one fixed template). Measured over three evaluation runs
+per setting, the map took that path for both out-of-domain golden queries in 3/3 runs, against 0/3
+for the baseline; retrieval and answer quality passed the pre-declared no-regression gate, with
+NDCG@5 slightly higher and both recall measures lower but inside the baseline's own run-to-run
+spread. The map is generated by
+`python -m llm_policy_library.build_map` and committed as a reviewable artifact; the reasoning,
+including the filtering feature that was measured and deliberately left off, is in
+[docs/architecture.md](docs/architecture.md).
 
 `RETRIEVAL_TOP_K` (default 5) is TASK.md's top-3–5 window and applies **per search step**,
-so a multi-step plan grounds the answer in more than five controls — 5 to 14 across the
+so a multi-step plan grounds the answer in more than five controls — 5 to 10 across the
 committed evaluation's on-topic queries. Each search returns its own top 5, and a question
 spanning access control *and* logging needs both families; see
 [docs/architecture.md](docs/architecture.md).
@@ -171,10 +188,14 @@ queries) through the pipeline and scores:
 
 It writes [samples/evaluation_report.md](samples/evaluation_report.md) and
 `samples/evaluation_transcripts.json`. Committed run: **faithfulness 5.0/5, relevancy
-5.0/5, zero invented citations** across all 13 on-topic queries, 2/2 fallbacks; recall
-0.46 exact-ID / 0.62 base-family, NDCG@5 0.49. The pipeline is a reasoning model, so
-re-running shifts the numbers slightly. [samples/](samples/) also holds a three-query
-smoke test (`smoke_test.json` + its audit trail `smoke_test.log`).
+5.0/5, zero invented citations** across all 13 on-topic queries, 2/2 fallbacks (both
+structural); recall 0.39 exact-ID / 0.66 base-family, NDCG@5 0.46. The pipeline is a
+reasoning model, so re-running shifts the numbers: across the three A/B runs of this
+configuration recall averaged 0.44 exact-ID / 0.65 base-family and NDCG@5 0.48. The committed
+report is a **separate** run of that same configuration, made after the default was flipped, so
+its figures sit alongside those three rather than among them — see
+[samples/corpus_map_ab.md](samples/corpus_map_ab.md). [samples/](samples/) also holds a three-query smoke test
+(`smoke_test.json` + its audit trail `smoke_test.log`).
 
 ## Designed scale and load test
 
@@ -205,12 +226,16 @@ committed artifact):
 |---|---:|---:|---:|---|
 | On-topic `POST /query` | 7.4 s | **9.4 s** | **12.0 s** | met, with headroom |
 
-Extrapolated to 50 users: the binding constraint is **chat RPM, not TPM and not
-latency** — ≈550 RPM needed against a 150 RPM quota, so the deployment needs **≈600K TPM**
-(the quota grants 1 RPM per 1,000 TPM), and Azure AI Search needs replicas (start at 2).
-Whether the latency SLA still holds at 50 users is deliberately left open — the current
-quota caps any measurable run at ~14 users. The full quota math, the stage-level latency
-split, and the mitigation levers are in the memo and summarized in
+Extrapolated to 50 users: **chat TPM binds** — ≈545 chat RPM and ≈805K TPM against quotas of
+150 RPM and 150K TPM, so the deployment needs **≈810K TPM** (the quota grants 1 RPM per 1,000
+TPM, so that also covers the RPM), and Azure AI Search needs replicas (start at 2). Before the
+corpus map the same workload needed ≈600K TPM and *RPM* was the binding constraint; the map's
+~1,053-token planner prefix is what flipped it. The token figures are measured throughput, not a
+quota allocation — Azure admits requests against its own up-front estimate, as the memo explains. Whether the latency SLA still holds at 50 users
+is deliberately left open — the current quota caps any measurable run at ~9 users on the shipped
+configuration (tokens, not requests, are what bind now), and the
+percentiles above predate the map. The full quota math, the stage-level latency split, and the
+mitigation levers are in the memo and summarized in
 [docs/architecture.md](docs/architecture.md); the 5M-word index sizing (≈18K chunks,
 ≈110 MB of vectors, ≈$0.14 to embed) is in the architecture doc's scalability section.
 
@@ -232,6 +257,13 @@ a message naming each variable to fix. Three settings carry design weight:
 - `LLM_REASONING_EFFORT` — deployable Azure OpenAI chat models reject
   `temperature`/`top_p`/`seed`, so determinism is grounding-enforced instead (decision D7;
   see [docs/architecture.md](docs/architecture.md)).
+- `PLANNER_CORPUS_MAP` (default `true`) — show the Planner the twenty control families and what
+  each covers. Costs ~1,053 input tokens per planner call and buys the structural refusal path
+  above: when the Planner judges no family covers the question, nothing is searched. `false`
+  reverts to the pre-map Planner, which refuses an off-topic question only when retrieval finds
+  nothing above the relevance floor. Decided by A/B over three evaluation runs per setting
+  (decision D12). The map's other half — filtering a search to one family — is measured and
+  **disabled**; see [docs/architecture.md](docs/architecture.md).
 - `RATE_LIMIT_PER_IP_PER_MINUTE` (default `10`) / `RATE_LIMIT_GLOBAL_PER_MINUTE` (default
   `30`) — the two request budgets on `POST /query`. The per-caller budget bounds one abuser;
   the global one bounds what the per-caller budget cannot (many callers each under their own

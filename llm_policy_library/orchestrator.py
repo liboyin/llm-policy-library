@@ -68,9 +68,9 @@ class PlannerExecutor(Executor):
         Args:
             agent: The Planner Agent.
             corpus_map: Whether the agent was built with the corpus map, which
-                also decides whether its `category`/`out_of_domain` answers are
-                honoured. It travels with the agent because it describes the
-                agent: the two must not disagree.
+                also decides whether its `out_of_domain` answer is honoured
+                (`category` never is — see `agents.planner`). It travels with the
+                agent because it describes the agent: the two must not disagree.
         """
         super().__init__(id="planner")
         self._agent = agent

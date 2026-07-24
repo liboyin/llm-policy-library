@@ -137,25 +137,45 @@ def test_build_planner_separates_the_map_block_from_the_instructions_by_a_blank_
     assert f"{tail}\n\n" in instructions
 
 
-def test_build_planner_with_the_map_shows_the_model_every_family_it_may_name() -> None:
-    """Every family the model may filter on must appear in the prompt."""
-    # A family missing here is one the model cannot route to and will not filter
-    # on, so a truncated list silently loses coverage of that slice of the corpus.
+def test_build_planner_with_the_map_shows_the_model_every_family_the_corpus_holds() -> None:
+    """Every family must appear: the list is what the model judges the question against."""
+    # A family missing here is one the model cannot see the corpus covers, so it
+    # would judge a question about that slice out of domain and refuse it outright.
+    # A truncated list therefore does not merely lose routing detail -- it turns
+    # part of the corpus into a false refusal.
     instructions = rendered_instructions(corpus_map=True)
 
     for family in family_names():
-        assert family in instructions, f"{family} is filterable but was never shown"
+        assert family in instructions, f"{family} is in the corpus but was never shown"
     assert render_map() in instructions
 
 
-def test_build_planner_with_the_map_states_the_rules_for_both_new_fields() -> None:
-    """The map block must state the rules for both new fields, not just list names."""
-    # A list of names alone never tells the model it may filter, may decline to
-    # filter, or may refuse -- which is the entire behavior this phase buys.
+def test_build_planner_with_the_map_tells_the_model_never_to_set_a_category() -> None:
+    """The map block must ask for a null category unconditionally, with no exception."""
+    # Four mutants motivate the shape of this test; each survived the assertion
+    # that preceded it, and every one of them reinstates in the prompt the
+    # filtering the A/B measured as a recall regression, with the suite green:
+    #   1. assert the field *names* appear -> "set `category` whenever one fits"
+    #   2. assert the opening clause       -> "...null UNLESS one family owns the step"
+    #   3. assert a prefix of the sentence -> sentence intact, exception appended after
+    #   4. assert the sentence + the next bullet's start -> hedge bullet inserted *before*
+    # Chasing them one substring at a time is a losing game, so the rules section is
+    # pinned *whole*: the instructions must END with exactly these two bullets and
+    # nothing else. Any insertion, deletion or rewording anywhere between "Use them
+    # as follows" and the final full stop breaks the assertion. The families block
+    # varies with the map and is excluded, which is why this anchors on the tail.
     instructions = rendered_instructions(corpus_map=True)
 
-    assert "`category`" in instructions
-    assert "`out_of_domain`" in instructions
+    assert instructions.endswith(
+        "Those families are the entire corpus. Use them as follows:\n\n"
+        "- Always leave `category` null. The list is here to tell you what the corpus holds, "
+        "not to narrow a search: an unfiltered search that ranks the right control third still "
+        "finds it, while a search filtered to one family cannot reach a control outside it.\n"
+        "- Set `out_of_domain` to true, and plan no steps, when no family on the list covers the "
+        "question. Judge the question against the list, not against your own knowledge of "
+        "security: this is how a question the corpus cannot answer is refused without searching "
+        "for it first."
+    ), "the two map rules must be exactly these, unconditional and unaccompanied"
 
 
 def test_planner_instructions_forbid_web_search_operators() -> None:
@@ -177,7 +197,11 @@ def test_usable_steps_drops_a_step_with_a_blank_search_query() -> None:
 
 
 def test_validated_categories_keeps_a_category_naming_a_real_family() -> None:
-    """The whole point of the map: a family the catalog holds must survive into the filter."""
+    """Given a real vocabulary, a real family survives -- the dormant filter's contract."""
+    # `plan_query` passes an empty vocabulary, so no category survives on the
+    # serving path. This pins the function's own rule, which is the boundary a
+    # Phase 11 tier-2 filter would re-enable through: pass `family_names()` here and
+    # filtering is back, so this must keep working for the option to stay open.
     steps = [make_step("account management", "Access Control")]
 
     checked, cleared = testee.validated_categories(steps, ["Access Control", "Media Protection"])
@@ -202,9 +226,10 @@ def test_validated_categories_clears_a_category_naming_no_family_and_reports_it(
 
 def test_validated_categories_clears_every_category_when_no_family_is_known() -> None:
     """An empty vocabulary must clear every category, however real the name looks."""
-    # This is the map-off arm's contract. If a guessed-but-real family survived
-    # here, the baseline would silently inherit the feature and the Phase 10 A/B
-    # would be comparing the map against itself.
+    # An empty vocabulary is what `plan_query` passes in *both* settings, so this
+    # is the serving contract, not just the baseline's: filtering measured worse
+    # than not filtering (Phase 10 A/B), and a guessed-but-real family surviving
+    # here would quietly reinstate it.
     steps = [make_step("q", "Access Control"), make_step("r", "Media Protection")]
 
     checked, cleared = testee.validated_categories(steps, ())
@@ -233,6 +258,28 @@ def test_validated_categories_rejects_a_family_name_differing_only_in_case() -> 
 
     assert [step.category for step in checked] == [None]
     assert cleared == ["access control"]
+
+
+def test_question_as_step_searches_the_question_verbatim_and_unfiltered() -> None:
+    """The substitute step must search what was asked, byte for byte, across every family."""
+    # The question carries surrounding whitespace on purpose: with a clean string,
+    # a `query.strip()` implementation is indistinguishable from a verbatim one, so
+    # the word "verbatim" in this test's name would assert nothing. The audit trail
+    # records what was asked; the substitute step is what was searched, and the two
+    # must be the same text. Unfiltered because a category invented for a question
+    # nothing was planned for would narrow the one search left to whatever it named.
+    step = testee.question_as_step("  How do I bake a chocolate cake?  ")
+
+    assert step.search_query == "  How do I bake a chocolate cake?  "
+    assert step.category is None
+
+
+def test_question_as_step_rejects_a_blank_question() -> None:
+    """The blank-search_query contract survives: it must not reach the embeddings API."""
+    # Substituting a blank question would rebuild the exact opaque HTTP 400 that
+    # `usable_steps` drops steps to prevent, only from the other direction.
+    with pytest.raises(testee.PlannerError, match="blank"):
+        testee.question_as_step("   ")
 
 
 def test_clamp_steps_drops_steps_beyond_the_limit() -> None:
@@ -303,20 +350,41 @@ async def test_plan_query_raises_when_the_model_returns_no_plan() -> None:
         await testee.plan_query(agent, "q", False)
 
 
-async def test_plan_query_raises_when_the_plan_has_no_steps() -> None:
-    """A stepless plan retrieves nothing, which would silently look like a safe fallback."""
+async def test_plan_query_searches_the_question_when_the_plan_has_no_steps(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A model that plans nothing must cost the caller a worse search, not their answer."""
+    # Measured live 2026-07-24: with the corpus map off the model answers an
+    # out-of-domain question by setting `out_of_domain` and omitting steps -- seen
+    # in 1 of 6 probe calls. That flag is discarded here, so raising surfaced an ordinary
+    # off-topic question as an HTTP 502 -- and aborted the Phase 10 baseline run.
     agent = planner_returning(make_output())
 
-    with pytest.raises(testee.PlannerError, match="no steps"):
-        await testee.plan_query(agent, "q", False)
+    with caplog.at_level(logging.WARNING, logger=testee.__name__):
+        plan = await testee.plan_query(agent, "How do I bake a chocolate cake?", False)
+
+    assert [step.search_query for step in plan.steps] == ["How do I bake a chocolate cake?"]
+    warning = next(record for record in caplog.records if record.levelno == logging.WARNING)
+    assert getattr(warning, "planned_steps") == 0
 
 
-async def test_plan_query_raises_when_every_step_has_a_blank_search_query() -> None:
-    """A plan of blank queries is a planning failure, not an embeddings HTTP 400."""
+async def test_plan_query_searches_the_question_when_every_step_is_blank() -> None:
+    """Blank steps leave nothing usable, which is the same refusal by another route."""
+    # `usable_steps` drops them before the embeddings API ever sees them, so what
+    # reaches the guard is indistinguishable from a stepless plan and degrades alike.
     agent = planner_returning(make_output(PlanStep(search_query=" ", purpose="p")))
 
-    with pytest.raises(testee.PlannerError, match="no steps"):
-        await testee.plan_query(agent, "q", False)
+    plan = await testee.plan_query(agent, "q", False)
+
+    assert [step.search_query for step in plan.steps] == ["q"]
+
+
+async def test_plan_query_raises_when_a_blank_question_plans_nothing_usable() -> None:
+    """The one unrecoverable case: no step to run and no question to fall back on."""
+    agent = planner_returning(make_output())
+
+    with pytest.raises(testee.PlannerError, match="blank"):
+        await testee.plan_query(agent, "   ", False)
 
 
 async def test_plan_query_accepts_a_stepless_plan_that_declares_itself_out_of_domain(
@@ -374,12 +442,27 @@ async def test_plan_query_ignores_out_of_domain_when_the_map_is_disabled() -> No
     assert [step.search_query for step in plan.steps] == ["cake baking"]
 
 
-async def test_plan_query_still_raises_on_a_stepless_plan_when_the_map_is_disabled() -> None:
-    """With the flag ignored, a stepless plan is once again just a broken plan."""
+async def test_plan_query_searches_a_stepless_out_of_domain_plan_when_the_map_is_disabled(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The map-off arm must search the refused question, not honour or fail on it."""
+    # Both halves matter to the Phase 10 A/B. Honouring the flag would hand the
+    # baseline the deterministic fallback the map is being measured for; raising
+    # would fail the request outright. Searching is what the pre-map system did,
+    # and it leaves the fallback where the baseline earned it: on the relevance
+    # floor rejecting what the search returned.
     agent = planner_returning(make_output(out_of_domain=True))
 
-    with pytest.raises(testee.PlannerError, match="no steps"):
-        await testee.plan_query(agent, "q", False)
+    with caplog.at_level(logging.WARNING, logger=testee.__name__):
+        plan = await testee.plan_query(agent, "What is the capital of France?", False)
+
+    assert plan.out_of_domain is False
+    assert [step.search_query for step in plan.steps] == ["What is the capital of France?"]
+    assert [step.category for step in plan.steps] == [None]
+    assert any(
+        record.message.startswith("planner returned no usable step")
+        for record in caplog.records
+    )
 
 
 async def test_plan_query_clamps_an_over_eager_plan_with_the_map_on() -> None:
@@ -395,43 +478,49 @@ async def test_plan_query_clamps_an_over_eager_plan_with_the_map_on() -> None:
     plan = await testee.plan_query(agent, "q", True)
 
     assert len(plan.steps) == testee.MAX_PLAN_STEPS
-    assert [step.category for step in plan.steps] == [family] * testee.MAX_PLAN_STEPS
+    assert [step.category for step in plan.steps] == [None] * testee.MAX_PLAN_STEPS
 
 
-async def test_plan_query_keeps_a_category_that_names_a_real_control_family() -> None:
-    """The routing win of the map: a step aimed at a family reaches retrieval as a filter."""
-    family = family_names()[0]
-    agent = planner_returning(make_output(make_step("account management", family)))
-
-    plan = await testee.plan_query(agent, "q", True)
-
-    assert [step.category for step in plan.steps] == [family]
-
-
-async def test_plan_query_clears_an_unknown_category_and_warns(
+async def test_plan_query_clears_a_category_naming_a_real_family_and_warns(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A category naming no family is cleared, and warned about, when the map is on."""
-    # Being given the list and still writing something else is model drift, the same
-    # class of signal as exceeding the step limit. The step survives as an
-    # unfiltered search rather than as a filter that can only match nothing.
-    agent = planner_returning(make_output(make_step("data in transit", "System Protection")))
+    """Even a real family is cleared: no search the pipeline runs is filtered today."""
+    # Measured over 3 eval runs per arm (2026-07-24): filtering cost -0.093 exact-ID
+    # and -0.071 base-family recall on the 12 queries it was applied to, failing
+    # D12's gate, while the map's out-of-domain half passed 3/3. So the map ships
+    # for the refusal and the filter stays off -- and this test is what stops a
+    # future edit re-enabling it silently and taking the recall back down.
+    family = family_names()[0]
+    agent = planner_returning(make_output(make_step("account management", family)))
 
     with caplog.at_level(logging.WARNING, logger=testee.__name__):
         plan = await testee.plan_query(agent, "q", True)
 
     assert [step.category for step in plan.steps] == [None]
     warning = next(record for record in caplog.records if record.levelno == logging.WARNING)
-    assert getattr(warning, "unknown_categories") == ["System Protection"]
+    assert getattr(warning, "discarded_categories") == [family]
+
+
+async def test_plan_query_clears_an_unknown_category_too() -> None:
+    """A category naming no family is cleared by the same rule, not a separate one."""
+    # It used to be the only cleared case; now it is unremarkable. The step still
+    # survives as an unfiltered search rather than as a filter matching nothing.
+    agent = planner_returning(make_output(make_step("data in transit", "System Protection")))
+
+    plan = await testee.plan_query(agent, "q", True)
+
+    assert [step.category for step in plan.steps] == [None]
+    assert plan.steps[0].search_query == "data in transit", "only the category may be cleared"
 
 
 async def test_plan_query_drops_a_valid_category_when_the_map_is_disabled(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """With the map off, even a real family name is dropped -- and silently."""
-    # It must not filter the baseline arm's search, and it is not drift either: the
-    # model was never shown a list to copy from, so warning here would cry wolf on
-    # every single baseline query.
+    """With the map off, a real family name is dropped -- and, unlike map-on, silently."""
+    # The clearing is the same; only the warning differs. With the map on the model
+    # was told outright to leave the field null, so a value is drift worth a line.
+    # With the map off it was never shown a list to copy from, so warning here would
+    # cry wolf on every single baseline query.
     agent = planner_returning(make_output(make_step("account management", family_names()[0])))
 
     with caplog.at_level(logging.WARNING, logger=testee.__name__):
@@ -505,7 +594,9 @@ async def test_plan_query_logs_the_out_of_domain_verdict_and_the_filter_each_ste
     """The audit line records the out-of-domain verdict and each step's filter."""
     # A refusal that never searched and a search that found nothing are different
     # events behind the same user-visible answer, and a narrowed search only reads
-    # as narrowed if its filter is recorded. This line is where both distinctions live.
+    # as narrowed if its filter is recorded. This line is where both distinctions
+    # live. The category logs as null because the search really did run unfiltered:
+    # the audit trail records what was executed, never what the model proposed.
     family = family_names()[0]
     agent = planner_returning(make_output(make_step("account management", family)))
 
@@ -514,7 +605,7 @@ async def test_plan_query_logs_the_out_of_domain_verdict_and_the_filter_each_ste
 
     record = next(record for record in caplog.records if record.message == "query planned")
     assert getattr(record, "out_of_domain") is False
-    assert getattr(record, "steps")[0]["category"] == family
+    assert getattr(record, "steps")[0]["category"] is None
 
 
 async def test_plan_query_logs_the_verdict_it_honoured_not_the_one_the_model_proposed(

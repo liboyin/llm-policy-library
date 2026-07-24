@@ -30,12 +30,16 @@ would turn an over-eager model response into a `ValidationError` deep inside the
 chat client instead of a value the Planner can clamp.
 
 `PlanStep.category` and `PlannerOutput.out_of_domain` are the corpus map's two
-outputs, and both are the model's *proposals* rather than decisions: the Planner
-honours them only when `PLANNER_CORPUS_MAP` is on, because the map is what puts
-the family list in front of the model in the first place. Asked without it, the
-model answers anyway and answers badly — measured 2026-07-22, it proposed the
-families "Access Control (AC)" and "SC", neither of which is a name the catalog
-uses — which is why the Planner validates rather than trusts.
+outputs, and both are the model's *proposals* rather than decisions. They are
+honoured differently. `out_of_domain` is honoured when `PLANNER_CORPUS_MAP` is on
+and discarded when it is off, because the map is what puts the family list in
+front of the model in the first place; asked without it, the model answers anyway
+and answers badly — measured 2026-07-22, it proposed the families "Access Control
+(AC)" and "SC", neither of which is a name the catalog uses. `category` is
+**never** honoured: filtering measured worse than not filtering (Phase 10's A/B),
+so the Planner clears it in both settings and the field survives only as a
+dormant capability for the Phase 11 tier-2 decision. `agents.planner` is the
+source of truth for both rules.
 
 The two fields are additive on the wire: a stored plan or API payload written
 before them still validates, `category` defaulting to None and
@@ -51,10 +55,13 @@ class PlanStep(BaseModel):
     # Engineering notes live in comments, not in this docstring: see the module
     # docstring on why every line of it is prompt surface.
     #
-    # `category` is the control family to restrict this search to, or None to
-    # search the whole index. It is only ever a family the corpus map lists —
-    # `agents.planner.validated_categories` clears anything else before the value
-    # reaches an OData filter — so retrieval may treat it as a fixed vocabulary.
+    # `category` would restrict this search to one control family, but on the
+    # serving path it is **always None**: `agents.planner` clears every value the
+    # model proposes, because filtering measured worse than not filtering. The
+    # vocabulary invariant it used to carry — that a surviving value is only ever a
+    # family the corpus map lists, so retrieval may treat it as a fixed vocabulary —
+    # is what a re-enabled Phase 11 filter would rest on, and is why
+    # `validated_categories` still exists.
     # `purpose` is recorded for the audit trail; nothing downstream branches on it.
 
     model_config = ConfigDict(frozen=True)
@@ -74,16 +81,17 @@ class PlanStep(BaseModel):
     # not the default. The default is what the *Planner* gets when a stored plan
     # predates this field.
     #
-    # The description must read correctly in both arms of the corpus-map A/B, since
-    # the schema is shared: with the map off there is no family list in the
-    # instructions, and this then tells the model to leave the field alone.
+    # The description is unconditional because the shipped behaviour is: filtering
+    # measured as a recall regression in Phase 10's A/B, so `plan_query` clears this
+    # field on every path in either setting. An earlier wording said "leave it null
+    # unless your instructions list the families to choose from", which the map-on
+    # instructions *do* -- so the model was told one thing by its schema and another
+    # by its prompt, and paid output tokens proposing values that were then thrown
+    # away. The field stays on the wire only so a re-enabled Phase 11 filter needs
+    # no schema change.
     category: str | None = Field(
         default=None,
-        description=(
-            "The one control family to search, spelled exactly as the list in "
-            "your instructions spells it. Null searches every family; leave it "
-            "null unless your instructions list the families to choose from."
-        ),
+        description="Always null. This system searches every control family.",
     )
 
 

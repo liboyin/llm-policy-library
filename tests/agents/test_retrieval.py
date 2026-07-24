@@ -225,8 +225,10 @@ def test_build_search_kwargs_sends_no_filter_when_the_step_names_no_family() -> 
 
 def test_build_search_kwargs_restricts_the_search_to_a_named_family() -> None:
     """A named family becomes an OData equality filter on the `category` field."""
-    # This is where the map's routing win is actually spent; `search_index.py`
-    # already declares `category` filterable, so no index change is involved.
+    # Retrieval still supports the filter, but nothing on the serving path sets a
+    # category: `plan_query` clears them all, because filtering measured as a
+    # recall regression in Phase 10's A/B. This test guards the dormant capability
+    # so the Phase 11 tier-2 work can re-enable it without rebuilding it.
     mode = testee.scoring_mode(make_settings(azure_search_semantic_ranker=True))
 
     kwargs = testee.build_search_kwargs("q", [0.1], mode, top_k=5, category="Access Control")

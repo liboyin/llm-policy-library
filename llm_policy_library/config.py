@@ -71,13 +71,15 @@ class Settings(BaseSettings):
         llm_reasoning_effort: Reasoning effort for the chat model. Deployable
             Azure OpenAI chat models reject `temperature`/`top_p`/`seed`, so
             grounding and low reasoning effort stand in for sampling controls.
-        planner_corpus_map: Whether to show the Planner the corpus map. This
-            gates the whole feature, not just the prompt: with it off the
-            Planner also discards the `category` and `out_of_domain` its model
-            proposes, so the pipeline plans, filters, and refuses as it did
-            before the map existed. That is what makes it a usable A/B lever.
-            The model's *request* still differs — the structured-output schema
-            is shared by both arms; see `agents.planner`'s module docstring.
+        planner_corpus_map: Whether to show the Planner the corpus map — the
+            twenty control families and what each covers — so it can refuse a
+            question no family covers without searching for it first. This gates
+            the whole feature, not just the prompt: with it off the Planner also
+            discards the `out_of_domain` its model proposes, so the pipeline
+            plans and refuses as it did before the map existed. That is what
+            makes it a usable A/B lever. The model's *request* still differs —
+            the structured-output schema is shared by both settings; see
+            `agents.planner`'s module docstring.
         rate_limit_per_ip_per_minute: Requests one caller may make per minute
             against `POST /query`; `0` disables the per-caller budget.
         rate_limit_global_per_minute: Requests one process may serve per minute
@@ -130,11 +132,14 @@ class Settings(BaseSettings):
 
     llm_reasoning_effort: ReasoningEffort = "minimal"
 
-    # Default false until the A/B decides it. Phase 10 Commit 3 runs the eval
-    # harness three times per setting and flips this only if the map costs no
-    # measured quality (TODO.md, decision D12) — so until that runs, the shipped
-    # default is the configuration whose numbers are actually committed.
-    planner_corpus_map: bool = False
+    # On by default: the A/B decided it. Three eval runs per setting (2026-07-24,
+    # TODO.md decision D12) put the map ahead of its no-regression floor on every
+    # metric — recall 0.439 exact-ID against a 0.387 floor, 0.648 base-family
+    # against 0.621, NDCG@5 0.482 against 0.370 — while all three runs refused
+    # both out-of-domain questions *structurally*, which the map-off arm never
+    # does. What is not enabled is the map's category filtering: measured in the
+    # same A/B, it cost recall and failed this gate (see `agents.planner`).
+    planner_corpus_map: bool = True
 
     # The service is public and unauthenticated, so these are what bound the
     # Azure OpenAI bill. `0` disables a budget — which the load test needs, since

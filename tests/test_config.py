@@ -61,7 +61,32 @@ def test_settings_defaults_encode_the_task_requirements(required_env: None) -> N
     assert settings.min_vector_score > 0.0, "a zero floor can never trigger the fallback"
     assert settings.azure_search_semantic_ranker is True
     assert settings.llm_reasoning_effort == "minimal"
+    # The corpus map ships ON. This is the A/B's verdict (TODO.md decision D12,
+    # three evaluation runs per setting), and what makes the safe fallback
+    # structural rather than a lucky miss on the relevance floor -- TASK.md
+    # requirement 3. Without this assertion the default silently reverts.
+    assert settings.planner_corpus_map is True
     assert settings.log_level == "INFO"
+
+
+def test_env_example_documents_the_shipped_corpus_map_default() -> None:
+    """The template an operator copies must not quietly disable the shipped default."""
+    # `cp .env.example .env` is the documented setup step, so the template is a
+    # second, equally live source of the default: a `false` here would override
+    # the code default for every operator who followed the README, and no test of
+    # `Settings` alone would notice.
+    template = (testee.DEFAULT_ENV_FILE.parent / ".env.example").read_text(encoding="utf-8")
+
+    assert "PLANNER_CORPUS_MAP=true" in template
+    assert "PLANNER_CORPUS_MAP=false" not in template
+
+
+def test_corpus_map_can_still_be_disabled_explicitly(required_env: None) -> None:
+    """The A/B lever must survive shipping: the pre-map pipeline stays reachable."""
+    with patch.dict(os.environ, {"PLANNER_CORPUS_MAP": "false"}):
+        settings = testee.load_settings(env_file=None)
+
+    assert settings.planner_corpus_map is False
 
 
 def test_settings_redacts_secrets_when_rendered(required_env: None) -> None:

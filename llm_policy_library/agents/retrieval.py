@@ -46,8 +46,11 @@ that claim rests on: filters bind before ranking, every hit still carries
 than an error. The floor still does its work under a filter — restricting
 "account management and least privilege" to Media Protection left only one of
 five hits above 1.8, versus 2.90 for the unfiltered top hit — but that one
-survivor is also why the Planner is told to leave the filter off when it is
-unsure: a filter cannot rescue a control it has excluded.
+survivor is why the Planner is told to leave the filter off altogether: a filter
+cannot rescue a control it has excluded. **Nothing on the serving path sets a
+category today** — Phase 10's A/B measured filtering as a recall regression and
+`plan_query` now clears every category, so this parameter is a retained, dormant
+capability kept for the Phase 11 tier-2 decision rather than a live feature.
 """
 
 import asyncio

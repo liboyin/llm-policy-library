@@ -4,24 +4,24 @@
       "original_query": "What controls apply to API security?",
       "steps": [
         {
-          "search_query": "API access control and authentication for application programming interfaces",
-          "purpose": "Find controls requiring authentication, authorization, session management, and access enforcement specifically for APIs and programmatic interfaces."
+          "search_query": "API security: authentication, authorization, rate limiting, input validation, and secure communication for APIs",
+          "purpose": "Find controls that require authentication/authorization for services, secure transport and encryption, input validation and sanitization, rate limiting/DoS protections, and API-specific access controls such as tokens and session management.",
+          "category": null
         },
         {
-          "search_query": "Secure API communications and protection of data in transit for APIs",
-          "purpose": "Find controls addressing confidentiality and integrity of API traffic, encryption, transport protections, and message-level protections for APIs."
-        },
-        {
-          "search_query": "API input validation, application-layer filtering, and protection against injection and abuse",
-          "purpose": "Find controls that require input validation, boundary protection, rate limiting, monitoring, and protections against common API attacks (injection, parameter tampering, denial of service)."
+          "search_query": "API management and service acquisition: secure development, contract requirements, and supplier controls for APIs",
+          "purpose": "Find controls addressing secure design/development/testing of APIs, supply\u2011chain or acquisition clauses for third\u2011party APIs and services, and secure development lifecycle requirements.",
+          "category": null
         }
-      ]
+      ],
+      "out_of_domain": false
     },
     "results": [
       {
         "step": {
-          "search_query": "API access control and authentication for application programming interfaces",
-          "purpose": "Find controls requiring authentication, authorization, session management, and access enforcement specifically for APIs and programmatic interfaces."
+          "search_query": "API security: authentication, authorization, rate limiting, input validation, and secure communication for APIs",
+          "purpose": "Find controls that require authentication/authorization for services, secure transport and encryption, input validation and sanitization, rate limiting/DoS protections, and API-specific access controls such as tokens and session management.",
+          "category": null
         },
         "documents": [
           {
@@ -29,220 +29,168 @@
             "title": "Service Identification and Authentication",
             "description": "Uniquely identify and authenticate [Assignment: system services and applications] before establishing communications with devices, users, or other services or applications.",
             "category": "Identification and Authentication",
-            "score": 2.349949598312378
+            "score": 2.1712474822998047
           },
           {
-            "id": "ac-3.12",
-            "title": "Assert and Enforce Application Access",
-            "description": "(a) Require applications to assert, as part of the installation process, the access needed to the following system applications and functions: [Assignment: system applications and functions];\n(b) Provide an enforcement mechanism to prevent unauthorized access; and\n(c) Approve access changes after initial installation of the application.",
-            "category": "Access Control",
-            "score": 2.3264660835266113
+            "id": "ia-13",
+            "title": "Identity Providers and Authorization Servers",
+            "description": "Employ identity providers and authorization servers to manage user, device, and non-person entity (NPE) identities, attributes, and access rights supporting authentication and authorization decisions in accordance with [Assignment: policy] using [Assignment: mechanisms].",
+            "category": "Identification and Authentication",
+            "score": 2.029332399368286
           },
           {
-            "id": "ac-4.22",
-            "title": "Access Only",
-            "description": "Provide access from a single device to computing platforms, applications, or data residing in multiple different security domains, while preventing information flow between the different security domains.",
-            "category": "Access Control",
-            "score": 2.2988173961639404
+            "id": "ia-5.2",
+            "title": "Public Key-based Authentication",
+            "description": "(a) For public key-based authentication:\n  (1) Enforce authorized access to the corresponding private key; and\n  (2) Map the authenticated identity to the account of the individual or group; and\n(b) When public key infrastructure (PKI) is used:\n  (1) Validate certificates by constructing and verifying a certification path to an accepted trust anchor, including checking certificate status information; and\n  (2) Implement a local cache of revocation data to support path discovery and validation.",
+            "category": "Identification and Authentication",
+            "score": 1.9727058410644531
           },
           {
-            "id": "ac-4.17",
-            "title": "Domain Authentication",
-            "description": "Uniquely identify and authenticate source and destination points by [Selection (one or more): organization, system, application, service, individual] for information transfer.",
+            "id": "ac-20.1",
+            "title": "Limits on Authorized Use",
+            "description": "Permit authorized individuals to use an external system to access the system or to process, store, or transmit organization-controlled information only after:\n  (a) Verification of the implementation of controls on the external system as specified in the organization\u2019s security and privacy policies and security and privacy plans; or\n  (b) Retention of approved system connection or processing agreements with the organizational entity hosting the external system.",
             "category": "Access Control",
-            "score": 2.165470600128174
+            "score": 1.9704018831253052
           },
           {
             "id": "ac-17.4",
             "title": "Privileged Commands and Access",
             "description": "(a) Authorize the execution of privileged commands and access to security-relevant information via remote access only in a format that provides assessable evidence and for the following needs: [Assignment: organization-defined needs] ; and\n(b) Document the rationale for remote access in the security plan for the system.",
             "category": "Access Control",
-            "score": 2.097744941711426
+            "score": 1.9361956119537354
           }
         ]
       },
       {
         "step": {
-          "search_query": "Secure API communications and protection of data in transit for APIs",
-          "purpose": "Find controls addressing confidentiality and integrity of API traffic, encryption, transport protections, and message-level protections for APIs."
+          "search_query": "API management and service acquisition: secure development, contract requirements, and supplier controls for APIs",
+          "purpose": "Find controls addressing secure design/development/testing of APIs, supply\u2011chain or acquisition clauses for third\u2011party APIs and services, and secure development lifecycle requirements.",
+          "category": null
         },
         "documents": [
           {
-            "id": "sc-8.1",
-            "title": "Cryptographic Protection",
-            "description": "Implement cryptographic mechanisms to [Selection (one or more): prevent unauthorized disclosure of information; detect changes to information] during transmission.",
-            "category": "System and Communications Protection",
-            "score": 2.3532285690307617
+            "id": "sa-4",
+            "title": "Acquisition Process",
+            "description": "Include the following requirements, descriptions, and criteria, explicitly or by reference, using [Selection (one or more): standardized contract language; [Assignment: contract language] ] in the acquisition contract for the system, system component, or system service:\n  a. Security and privacy functional requirements;\n  b. Strength of mechanism requirements;\n  c. Security and privacy assurance requirements;\n  d. Controls needed to satisfy the security and privacy requirements.\n  e. Security and privacy documentation requirements;\n  f. Requirements for protecting security and privacy documentation;\n  g. Description of the system development environment and environment in which the system is intended to operate;\n  h. Allocation of responsibility or identification of parties responsible for information security, privacy, and supply chain risk management; and\n  i. Acceptance criteria.",
+            "category": "System and Services Acquisition",
+            "score": 2.117816686630249
           },
           {
-            "id": "sc-8",
-            "title": "Transmission Confidentiality and Integrity",
-            "description": "Protect the [Selection (one or more): confidentiality; integrity] of transmitted information.",
-            "category": "System and Communications Protection",
-            "score": 2.328415632247925
+            "id": "sa-17",
+            "title": "Developer Security and Privacy Architecture and Design",
+            "description": "Require the developer of the system, system component, or system service to produce a design specification and security and privacy architecture that:\n  a. Is consistent with the organization\u2019s security and privacy architecture that is an integral part the organization\u2019s enterprise architecture;\n  b. Accurately and completely describes the required security and privacy functionality, and the allocation of controls among physical and logical components; and\n  c. Expresses how individual security and privacy functions, mechanisms, and services work together to provide required security and privacy capabilities and a unified approach to protection.",
+            "category": "System and Services Acquisition",
+            "score": 1.9975186586380005
           },
           {
-            "id": "sc-16.3",
-            "title": "Cryptographic Binding",
-            "description": "Implement [Assignment: mechanisms or techniques] to bind security and privacy attributes to transmitted information.",
-            "category": "System and Communications Protection",
-            "score": 2.2064783573150635
+            "id": "sa-9.3",
+            "title": "Establish and Maintain Trust Relationship with Providers",
+            "description": "Establish, document, and maintain trust relationships with external service providers based on the following requirements, properties, factors, or conditions: [Assignment: organization-defined security and privacy requirements, properties, factors, or conditions defining acceptable trust relationships].",
+            "category": "System and Services Acquisition",
+            "score": 1.990252137184143
           },
           {
-            "id": "sc-8.2",
-            "title": "Pre- and Post-transmission Handling",
-            "description": "Maintain the [Selection (one or more): confidentiality; integrity] of information during preparation for transmission and during reception.",
-            "category": "System and Communications Protection",
-            "score": 2.1854870319366455
+            "id": "sa-15",
+            "title": "Development Process, Standards, and Tools",
+            "description": "a. Require the developer of the system, system component, or system service to follow a documented development process that:\n  1. Explicitly addresses security and privacy requirements;\n  2. Identifies the standards and tools used in the development process;\n  3. Documents the specific tool options and tool configurations used in the development process; and\n  4. Documents, manages, and ensures the integrity of changes to the process and/or tools used in development; and\nb. Review the development process, standards, tools, tool options, and tool configurations [Assignment: frequency] to determine if the process, standards, tools, tool options and tool configurations selected and employed can satisfy the following security and privacy requirements: [Assignment: organization-defined security and privacy requirements].",
+            "category": "System and Services Acquisition",
+            "score": 1.984048843383789
           },
           {
-            "id": "sc-21",
-            "title": "Secure Name/Address Resolution Service (Recursive or Caching Resolver)",
-            "description": "Request and perform data origin authentication and data integrity verification on the name/address resolution responses the system receives from authoritative sources.",
-            "category": "System and Communications Protection",
-            "score": 2.1704111099243164
-          }
-        ]
-      },
-      {
-        "step": {
-          "search_query": "API input validation, application-layer filtering, and protection against injection and abuse",
-          "purpose": "Find controls that require input validation, boundary protection, rate limiting, monitoring, and protections against common API attacks (injection, parameter tampering, denial of service)."
-        },
-        "documents": [
-          {
-            "id": "sc-3.5",
-            "title": "Layered Structures",
-            "description": "Implement security functions as a layered structure minimizing interactions between layers of the design and avoiding any dependence by lower layers on the functionality or correctness of higher layers.",
-            "category": "System and Communications Protection",
-            "score": 1.981213092803955
-          },
-          {
-            "id": "si-10.6",
-            "title": "Injection Prevention",
-            "description": "Prevent untrusted data injections.",
-            "category": "System and Information Integrity",
-            "score": 1.9588816165924072
-          },
-          {
-            "id": "si-10.2",
-            "title": "Review and Resolve Errors",
-            "description": "Review and resolve input validation errors within [Assignment: organization-defined time period].",
-            "category": "System and Information Integrity",
-            "score": 1.8282597064971924
+            "id": "sa-4.12",
+            "title": "Data Ownership",
+            "description": "(a) Include organizational data ownership requirements in the acquisition contract; and\n(b) Require all data to be removed from the contractor\u2019s system and returned to the organization within [Assignment: time frame].",
+            "category": "System and Services Acquisition",
+            "score": 1.9416898488998413
           }
         ]
       }
     ],
     "documents": [
       {
-        "id": "sc-8.1",
-        "title": "Cryptographic Protection",
-        "description": "Implement cryptographic mechanisms to [Selection (one or more): prevent unauthorized disclosure of information; detect changes to information] during transmission.",
-        "category": "System and Communications Protection",
-        "score": 2.3532285690307617
-      },
-      {
         "id": "ia-9",
         "title": "Service Identification and Authentication",
         "description": "Uniquely identify and authenticate [Assignment: system services and applications] before establishing communications with devices, users, or other services or applications.",
         "category": "Identification and Authentication",
-        "score": 2.349949598312378
+        "score": 2.1712474822998047
       },
       {
-        "id": "sc-8",
-        "title": "Transmission Confidentiality and Integrity",
-        "description": "Protect the [Selection (one or more): confidentiality; integrity] of transmitted information.",
-        "category": "System and Communications Protection",
-        "score": 2.328415632247925
+        "id": "sa-4",
+        "title": "Acquisition Process",
+        "description": "Include the following requirements, descriptions, and criteria, explicitly or by reference, using [Selection (one or more): standardized contract language; [Assignment: contract language] ] in the acquisition contract for the system, system component, or system service:\n  a. Security and privacy functional requirements;\n  b. Strength of mechanism requirements;\n  c. Security and privacy assurance requirements;\n  d. Controls needed to satisfy the security and privacy requirements.\n  e. Security and privacy documentation requirements;\n  f. Requirements for protecting security and privacy documentation;\n  g. Description of the system development environment and environment in which the system is intended to operate;\n  h. Allocation of responsibility or identification of parties responsible for information security, privacy, and supply chain risk management; and\n  i. Acceptance criteria.",
+        "category": "System and Services Acquisition",
+        "score": 2.117816686630249
       },
       {
-        "id": "ac-3.12",
-        "title": "Assert and Enforce Application Access",
-        "description": "(a) Require applications to assert, as part of the installation process, the access needed to the following system applications and functions: [Assignment: system applications and functions];\n(b) Provide an enforcement mechanism to prevent unauthorized access; and\n(c) Approve access changes after initial installation of the application.",
+        "id": "ia-13",
+        "title": "Identity Providers and Authorization Servers",
+        "description": "Employ identity providers and authorization servers to manage user, device, and non-person entity (NPE) identities, attributes, and access rights supporting authentication and authorization decisions in accordance with [Assignment: policy] using [Assignment: mechanisms].",
+        "category": "Identification and Authentication",
+        "score": 2.029332399368286
+      },
+      {
+        "id": "sa-17",
+        "title": "Developer Security and Privacy Architecture and Design",
+        "description": "Require the developer of the system, system component, or system service to produce a design specification and security and privacy architecture that:\n  a. Is consistent with the organization\u2019s security and privacy architecture that is an integral part the organization\u2019s enterprise architecture;\n  b. Accurately and completely describes the required security and privacy functionality, and the allocation of controls among physical and logical components; and\n  c. Expresses how individual security and privacy functions, mechanisms, and services work together to provide required security and privacy capabilities and a unified approach to protection.",
+        "category": "System and Services Acquisition",
+        "score": 1.9975186586380005
+      },
+      {
+        "id": "sa-9.3",
+        "title": "Establish and Maintain Trust Relationship with Providers",
+        "description": "Establish, document, and maintain trust relationships with external service providers based on the following requirements, properties, factors, or conditions: [Assignment: organization-defined security and privacy requirements, properties, factors, or conditions defining acceptable trust relationships].",
+        "category": "System and Services Acquisition",
+        "score": 1.990252137184143
+      },
+      {
+        "id": "sa-15",
+        "title": "Development Process, Standards, and Tools",
+        "description": "a. Require the developer of the system, system component, or system service to follow a documented development process that:\n  1. Explicitly addresses security and privacy requirements;\n  2. Identifies the standards and tools used in the development process;\n  3. Documents the specific tool options and tool configurations used in the development process; and\n  4. Documents, manages, and ensures the integrity of changes to the process and/or tools used in development; and\nb. Review the development process, standards, tools, tool options, and tool configurations [Assignment: frequency] to determine if the process, standards, tools, tool options and tool configurations selected and employed can satisfy the following security and privacy requirements: [Assignment: organization-defined security and privacy requirements].",
+        "category": "System and Services Acquisition",
+        "score": 1.984048843383789
+      },
+      {
+        "id": "ia-5.2",
+        "title": "Public Key-based Authentication",
+        "description": "(a) For public key-based authentication:\n  (1) Enforce authorized access to the corresponding private key; and\n  (2) Map the authenticated identity to the account of the individual or group; and\n(b) When public key infrastructure (PKI) is used:\n  (1) Validate certificates by constructing and verifying a certification path to an accepted trust anchor, including checking certificate status information; and\n  (2) Implement a local cache of revocation data to support path discovery and validation.",
+        "category": "Identification and Authentication",
+        "score": 1.9727058410644531
+      },
+      {
+        "id": "ac-20.1",
+        "title": "Limits on Authorized Use",
+        "description": "Permit authorized individuals to use an external system to access the system or to process, store, or transmit organization-controlled information only after:\n  (a) Verification of the implementation of controls on the external system as specified in the organization\u2019s security and privacy policies and security and privacy plans; or\n  (b) Retention of approved system connection or processing agreements with the organizational entity hosting the external system.",
         "category": "Access Control",
-        "score": 2.3264660835266113
+        "score": 1.9704018831253052
       },
       {
-        "id": "ac-4.22",
-        "title": "Access Only",
-        "description": "Provide access from a single device to computing platforms, applications, or data residing in multiple different security domains, while preventing information flow between the different security domains.",
-        "category": "Access Control",
-        "score": 2.2988173961639404
-      },
-      {
-        "id": "sc-16.3",
-        "title": "Cryptographic Binding",
-        "description": "Implement [Assignment: mechanisms or techniques] to bind security and privacy attributes to transmitted information.",
-        "category": "System and Communications Protection",
-        "score": 2.2064783573150635
-      },
-      {
-        "id": "sc-8.2",
-        "title": "Pre- and Post-transmission Handling",
-        "description": "Maintain the [Selection (one or more): confidentiality; integrity] of information during preparation for transmission and during reception.",
-        "category": "System and Communications Protection",
-        "score": 2.1854870319366455
-      },
-      {
-        "id": "sc-21",
-        "title": "Secure Name/Address Resolution Service (Recursive or Caching Resolver)",
-        "description": "Request and perform data origin authentication and data integrity verification on the name/address resolution responses the system receives from authoritative sources.",
-        "category": "System and Communications Protection",
-        "score": 2.1704111099243164
-      },
-      {
-        "id": "ac-4.17",
-        "title": "Domain Authentication",
-        "description": "Uniquely identify and authenticate source and destination points by [Selection (one or more): organization, system, application, service, individual] for information transfer.",
-        "category": "Access Control",
-        "score": 2.165470600128174
+        "id": "sa-4.12",
+        "title": "Data Ownership",
+        "description": "(a) Include organizational data ownership requirements in the acquisition contract; and\n(b) Require all data to be removed from the contractor\u2019s system and returned to the organization within [Assignment: time frame].",
+        "category": "System and Services Acquisition",
+        "score": 1.9416898488998413
       },
       {
         "id": "ac-17.4",
         "title": "Privileged Commands and Access",
         "description": "(a) Authorize the execution of privileged commands and access to security-relevant information via remote access only in a format that provides assessable evidence and for the following needs: [Assignment: organization-defined needs] ; and\n(b) Document the rationale for remote access in the security plan for the system.",
         "category": "Access Control",
-        "score": 2.097744941711426
-      },
-      {
-        "id": "sc-3.5",
-        "title": "Layered Structures",
-        "description": "Implement security functions as a layered structure minimizing interactions between layers of the design and avoiding any dependence by lower layers on the functionality or correctness of higher layers.",
-        "category": "System and Communications Protection",
-        "score": 1.981213092803955
-      },
-      {
-        "id": "si-10.6",
-        "title": "Injection Prevention",
-        "description": "Prevent untrusted data injections.",
-        "category": "System and Information Integrity",
-        "score": 1.9588816165924072
-      },
-      {
-        "id": "si-10.2",
-        "title": "Review and Resolve Errors",
-        "description": "Review and resolve input validation errors within [Assignment: organization-defined time period].",
-        "category": "System and Information Integrity",
-        "score": 1.8282597064971924
+        "score": 1.9361956119537354
       }
     ],
     "response": {
-      "answer": "Applicable controls for API security from the supplied list are:\n\n- Require strong identification/authentication of services and apps that communicate via APIs: uniquely identify and authenticate system services and applications before establishing communications [ia-9].\n\n- Protect confidentiality and integrity of API traffic in transit: implement cryptographic mechanisms to prevent unauthorized disclosure and to detect changes during transmission [sc-8.1], and more generally protect confidentiality and/or integrity of transmitted information [sc-8]. Also maintain confidentiality and integrity during preparation for transmission and reception (pre/post handling) [sc-8.2]. Where needed, bind security or privacy attributes to the transmitted API data (cryptographic binding) [sc-16.3].\n\n- Ensure name/address resolution used by APIs is trustworthy: request and perform data origin authentication and integrity verification on name/address resolution responses (secure resolver) to avoid DNS-based attacks on API endpoints [sc-21].\n\n- Enforce application-level access controls for API clients/consumers: require applications to assert needed access at installation, provide enforcement to prevent unauthorized access, and approve access changes after installation [ac-3.12]. Also support domain-level authentication of source and destination points for information transfer (identify/authenticate organization/system/application/service/individual) [ac-4.17].\n\n- Limit cross-domain information flow for multi-domain access scenarios: provide access from a single device to resources in multiple security domains while preventing information flow between domains (useful for APIs bridging domains) [ac-4.22].\n\n- Control privileged remote API actions: authorize privileged commands and access via remote access only in formats that provide assessable evidence, and document remote access rationale in the system security plan [ac-17.4].\n\n- Architect APIs with layered security: implement security functions in layered structures minimizing inter-layer interactions and avoiding lower-layer dependence on higher-layer correctness [sc-3.5].\n\n- Validate and sanitize inputs to APIs to prevent injections and resolve input validation errors promptly: prevent untrusted data injections [si-10.6] and review/resolve input validation errors within an organization-defined time period [si-10.2].\n\nIf you need mapping of these controls to specific API safeguards (e.g., TLS for transport, mTLS for service auth, input validation libraries, API gateway enforcement), say so and I will map each control to those concrete measures.",
+      "answer": "Applicable controls for API security from the supplied set are the following (with brief explanation of how each applies):\n\n- [ia-9] Service Identification and Authentication \u2014 APIs and the services/apps that implement them must uniquely identify and authenticate before establishing communications. This addresses authenticating API clients, services, and backend components prior to API calls [ia-9].\n\n- [ia-13] Identity Providers and Authorization Servers \u2014 Use identity providers/authorization servers to manage identities, attributes, and access rights that support authentication and authorization decisions for API consumers (users, devices, NPEs) per organizational policy and mechanisms (e.g., OAuth/OIDC deployments) [ia-13].\n\n- [ia-5.2] Public Key-based Authentication \u2014 When APIs use public-key mechanisms (mutual TLS, client certificates), enforce protection of private keys, map authenticated identities to accounts, validate PKI certificate paths and statuses, and cache revocation data as needed for API authentication [ia-5.2].\n\n- [ac-20.1] Limits on Authorized Use \u2014 Permit external systems or third-party integrations to access organization APIs only after verifying that the external system implements required controls or after retaining approved connection/processing agreements, covering third\u2011party API consumers and federated integrations [ac-20.1].\n\n- [ac-17.4] Privileged Commands and Access \u2014 Restrict and authorize execution of privileged API operations or remote privileged access; require formats that provide assessable evidence and document rationale in the system security plan (applies to privileged API endpoints and admin interfaces) [ac-17.4].\n\n- [sa-4] Acquisition Process \u2014 Ensure API-related acquisitions (APIs, API gateways, cloud services) include security/privacy requirements, strength and assurance requirements, controls, documentation, responsibility allocation, and acceptance criteria in contracts [sa-4].\n\n- [sa-4.12] Data Ownership \u2014 In contracts for API-hosting or API-managed services, include data ownership and require removal/return of organizational data on contract termination, which applies to APIs that store/process organizational data with contractors [sa-4.12].\n\n- [sa-17] Developer Security and Privacy Architecture and Design \u2014 Require API developers to produce design/specifications and security architecture that align with enterprise architecture and clearly describe security functionality and control allocation across API components [sa-17].\n\n- [sa-15] Development Process, Standards, and Tools \u2014 Require API developers to follow a documented secure development process that explicitly addresses security/privacy requirements, specifies standards/tools/configurations, manages changes to those tools/processes, and periodically review them against organization-defined security/privacy requirements [sa-15].\n\n- [sa-9.3] Establish and Maintain Trust Relationship with Providers \u2014 For externally provided API services or platform providers (API gateways, cloud APIs), establish, document, and maintain trust relationships based on organization-defined security/privacy requirements and conditions [sa-9.3].\n\nIf you need, I can map these controls to specific API controls (authentication, authorization, transport protection, client credential management, onboarding/contract clauses, developer requirements) using only the controls above.",
       "citations": [
         "ia-9",
-        "sc-8.1",
-        "sc-8",
-        "sc-8.2",
-        "sc-16.3",
-        "sc-21",
-        "ac-3.12",
-        "ac-4.17",
-        "ac-4.22",
+        "ia-13",
+        "ia-5.2",
+        "ac-20.1",
         "ac-17.4",
-        "sc-3.5",
-        "si-10.6",
-        "si-10.2"
+        "sa-4",
+        "sa-4.12",
+        "sa-17",
+        "sa-15",
+        "sa-9.3"
       ],
       "is_fallback": false
     }
@@ -252,101 +200,104 @@
       "original_query": "What policies relate to logging and monitoring?",
       "steps": [
         {
-          "search_query": "logging and monitoring of information system activities and audit records",
-          "purpose": "Find NIST SP 800-53 controls that require creation, management, and review of audit logs and continuous monitoring of system activity (audit generation, log retention, protection, review, and monitoring processes)."
+          "search_query": "logging and monitoring policies",
+          "purpose": "Find controls that establish requirements for event logging, log management, centralized collection, monitoring, alerting, and audit review across systems",
+          "category": null
         }
-      ]
+      ],
+      "out_of_domain": false
     },
     "results": [
       {
         "step": {
-          "search_query": "logging and monitoring of information system activities and audit records",
-          "purpose": "Find NIST SP 800-53 controls that require creation, management, and review of audit logs and continuous monitoring of system activity (audit generation, log retention, protection, review, and monitoring processes)."
+          "search_query": "logging and monitoring policies",
+          "purpose": "Find controls that establish requirements for event logging, log management, centralized collection, monitoring, alerting, and audit review across systems",
+          "category": null
         },
         "documents": [
+          {
+            "id": "pe-6",
+            "title": "Monitoring Physical Access",
+            "description": "a. Monitor physical access to the facility where the system resides to detect and respond to physical security incidents;\nb. Review physical access logs [Assignment: frequency] and upon occurrence of [Assignment: events] ; and\nc. Coordinate results of reviews and investigations with the organizational incident response capability.",
+            "category": "Physical and Environmental Protection",
+            "score": 2.2638137340545654
+          },
+          {
+            "id": "cm-11.3",
+            "title": "Automated Enforcement and Monitoring",
+            "description": "Enforce and monitor compliance with software installation policies using [Assignment: organization-defined automated mechanisms].",
+            "category": "Configuration Management",
+            "score": 2.161449670791626
+          },
           {
             "id": "au-2",
             "title": "Event Logging",
             "description": "a. Identify the types of events that the system is capable of logging in support of the audit function: [Assignment: event types];\nb. Coordinate the event logging function with other organizational entities requiring audit-related information to guide and inform the selection criteria for events to be logged;\nc. Specify the following event types for logging within the system: [Assignment: organization-defined event types (subset of the event types defined in [AU-2a.](#au-2_smt.a)) along with the frequency of (or situation requiring) logging for each identified event type];\nd. Provide a rationale for why the event types selected for logging are deemed to be adequate to support after-the-fact investigations of incidents; and\ne. Review and update the event types selected for logging [Assignment: frequency].",
             "category": "Audit and Accountability",
-            "score": 2.7089383602142334
+            "score": 2.160031795501709
           },
           {
-            "id": "au-6.5",
-            "title": "Integrated Analysis of Audit Records",
-            "description": "Integrate analysis of audit records with analysis of [Selection (one or more): vulnerability scanning information; performance data; system monitoring information; [Assignment: data/information collected from other sources] ] to further enhance the ability to identify inappropriate or unusual activity.",
-            "category": "Audit and Accountability",
-            "score": 2.5414516925811768
-          },
-          {
-            "id": "au-12",
-            "title": "Audit Record Generation",
-            "description": "a. Provide audit record generation capability for the event types the system is capable of auditing as defined in [AU-2a](#au-2_smt.a) on [Assignment: system components];\nb. Allow [Assignment: personnel or roles] to select the event types that are to be logged by specific components of the system; and\nc. Generate audit records for the event types defined in [AU-2c](#au-2_smt.c) that include the audit record content defined in [AU-3](#au-3).",
-            "category": "Audit and Accountability",
-            "score": 2.4640002250671387
-          },
-          {
-            "id": "ma-4.1",
-            "title": "Logging and Review",
-            "description": "(a) Log [Assignment: organization-defined audit events] for nonlocal maintenance and diagnostic sessions; and\n(b) Review the audit records of the maintenance and diagnostic sessions to detect anomalous behavior.",
+            "id": "ma-4",
+            "title": "Nonlocal Maintenance",
+            "description": "a. Approve and monitor nonlocal maintenance and diagnostic activities;\nb. Allow the use of nonlocal maintenance and diagnostic tools only as consistent with organizational policy and documented in the security plan for the system;\nc. Employ strong authentication in the establishment of nonlocal maintenance and diagnostic sessions;\nd. Maintain records for nonlocal maintenance and diagnostic activities; and\ne. Terminate session and network connections when nonlocal maintenance is completed.",
             "category": "Maintenance",
-            "score": 2.4505302906036377
+            "score": 2.1566309928894043
           },
           {
-            "id": "au-6.4",
-            "title": "Central Review and Analysis",
-            "description": "Provide and implement the capability to centrally review and analyze audit records from multiple components within the system.",
-            "category": "Audit and Accountability",
-            "score": 2.389915943145752
+            "id": "ac-25",
+            "title": "Reference Monitor",
+            "description": "Implement a reference monitor for [Assignment: access control policies] that is tamperproof, always invoked, and small enough to be subject to analysis and testing, the completeness of which can be assured.",
+            "category": "Access Control",
+            "score": 2.142939567565918
           }
         ]
       }
     ],
     "documents": [
       {
+        "id": "pe-6",
+        "title": "Monitoring Physical Access",
+        "description": "a. Monitor physical access to the facility where the system resides to detect and respond to physical security incidents;\nb. Review physical access logs [Assignment: frequency] and upon occurrence of [Assignment: events] ; and\nc. Coordinate results of reviews and investigations with the organizational incident response capability.",
+        "category": "Physical and Environmental Protection",
+        "score": 2.2638137340545654
+      },
+      {
+        "id": "cm-11.3",
+        "title": "Automated Enforcement and Monitoring",
+        "description": "Enforce and monitor compliance with software installation policies using [Assignment: organization-defined automated mechanisms].",
+        "category": "Configuration Management",
+        "score": 2.161449670791626
+      },
+      {
         "id": "au-2",
         "title": "Event Logging",
         "description": "a. Identify the types of events that the system is capable of logging in support of the audit function: [Assignment: event types];\nb. Coordinate the event logging function with other organizational entities requiring audit-related information to guide and inform the selection criteria for events to be logged;\nc. Specify the following event types for logging within the system: [Assignment: organization-defined event types (subset of the event types defined in [AU-2a.](#au-2_smt.a)) along with the frequency of (or situation requiring) logging for each identified event type];\nd. Provide a rationale for why the event types selected for logging are deemed to be adequate to support after-the-fact investigations of incidents; and\ne. Review and update the event types selected for logging [Assignment: frequency].",
         "category": "Audit and Accountability",
-        "score": 2.7089383602142334
+        "score": 2.160031795501709
       },
       {
-        "id": "au-6.5",
-        "title": "Integrated Analysis of Audit Records",
-        "description": "Integrate analysis of audit records with analysis of [Selection (one or more): vulnerability scanning information; performance data; system monitoring information; [Assignment: data/information collected from other sources] ] to further enhance the ability to identify inappropriate or unusual activity.",
-        "category": "Audit and Accountability",
-        "score": 2.5414516925811768
-      },
-      {
-        "id": "au-12",
-        "title": "Audit Record Generation",
-        "description": "a. Provide audit record generation capability for the event types the system is capable of auditing as defined in [AU-2a](#au-2_smt.a) on [Assignment: system components];\nb. Allow [Assignment: personnel or roles] to select the event types that are to be logged by specific components of the system; and\nc. Generate audit records for the event types defined in [AU-2c](#au-2_smt.c) that include the audit record content defined in [AU-3](#au-3).",
-        "category": "Audit and Accountability",
-        "score": 2.4640002250671387
-      },
-      {
-        "id": "ma-4.1",
-        "title": "Logging and Review",
-        "description": "(a) Log [Assignment: organization-defined audit events] for nonlocal maintenance and diagnostic sessions; and\n(b) Review the audit records of the maintenance and diagnostic sessions to detect anomalous behavior.",
+        "id": "ma-4",
+        "title": "Nonlocal Maintenance",
+        "description": "a. Approve and monitor nonlocal maintenance and diagnostic activities;\nb. Allow the use of nonlocal maintenance and diagnostic tools only as consistent with organizational policy and documented in the security plan for the system;\nc. Employ strong authentication in the establishment of nonlocal maintenance and diagnostic sessions;\nd. Maintain records for nonlocal maintenance and diagnostic activities; and\ne. Terminate session and network connections when nonlocal maintenance is completed.",
         "category": "Maintenance",
-        "score": 2.4505302906036377
+        "score": 2.1566309928894043
       },
       {
-        "id": "au-6.4",
-        "title": "Central Review and Analysis",
-        "description": "Provide and implement the capability to centrally review and analyze audit records from multiple components within the system.",
-        "category": "Audit and Accountability",
-        "score": 2.389915943145752
+        "id": "ac-25",
+        "title": "Reference Monitor",
+        "description": "Implement a reference monitor for [Assignment: access control policies] that is tamperproof, always invoked, and small enough to be subject to analysis and testing, the completeness of which can be assured.",
+        "category": "Access Control",
+        "score": 2.142939567565918
       }
     ],
     "response": {
-      "answer": "The supplied controls that relate to logging and monitoring are the following:\n\n- AU\u20112 (Event Logging) \u2014 defines what event types the system must be capable of logging, coordination with other organizational entities on logging needs, specifying which event types to log and their frequency or triggering situations, providing a rationale for adequacy for investigations, and periodic review/update of the selected event types [au-2].\n\n- AU\u201112 (Audit Record Generation) \u2014 requires audit record generation capability for the event types identified under AU\u20112a for specified system components, allows designated personnel/roles to select which event types are logged by specific components, and requires generated audit records to include the contents defined in AU\u20113 for the event types in AU\u20112c [au-12].\n\n- AU\u20116.4 (Central Review and Analysis) \u2014 requires capability to centrally review and analyze audit records from multiple system components, supporting consolidated monitoring and analysis [au-6.4].\n\n- AU\u20116.5 (Integrated Analysis of Audit Records) \u2014 requires integration of audit-record analysis with other data sources (e.g., vulnerability scanning, performance data, system monitoring, or other organization-defined sources) to improve detection of inappropriate or unusual activity [au-6.5].\n\n- MA\u20114.1 (Logging and Review \u2014 Maintenance) \u2014 requires logging of organization-defined audit events for nonlocal maintenance and diagnostic sessions and review of those maintenance/diagnostic audit records to detect anomalous behavior [ma-4.1].\n\nIf you need policy text or template language for any one of these controls (for example, an organizational policy statement implementing AU\u20112 or AU\u20116.4), indicate which control(s) and I will draft it using only the corresponding control content above.",
+      "answer": "The supplied controls that relate to logging and monitoring are:\n\n- [pe-6] Monitoring Physical Access \u2014 requires monitoring physical access, reviewing physical access logs at an organization-defined frequency and on specified events, and coordinating review results with incident response [pe-6].\n\n- [au-2] Event Logging \u2014 defines identification of loggable event types, coordination with other entities for selection criteria, specification of which event types are logged and when, rationale for adequacy of selected event types for after\u2011the\u2011fact investigations, and periodic review/update of logged event types [au-2].\n\n- [cm-11.3] Automated Enforcement and Monitoring \u2014 requires enforcing and monitoring compliance with software installation policies via organization-defined automated mechanisms (this is a form of monitoring of configuration/software state) [cm-11.3].\n\n- [ma-4] Nonlocal Maintenance \u2014 requires approving and monitoring nonlocal maintenance activities and maintaining records for those activities (recordkeeping and monitoring of remote maintenance sessions) [ma-4].\n\nNote: [ac-25] Reference Monitor is about enforcing access control policy via a tamperproof monitor; it is not itself a logging or monitoring control and does not mandate logging/monitoring activities, so it is not listed as a logging/monitoring policy here [ac-25].",
       "citations": [
+        "pe-6",
         "au-2",
-        "au-12",
-        "au-6.4",
-        "au-6.5",
-        "ma-4.1"
+        "cm-11.3",
+        "ma-4",
+        "ac-25"
       ],
       "is_fallback": false
     }
@@ -354,22 +305,10 @@
   {
     "plan": {
       "original_query": "What is the capital of France?",
-      "steps": [
-        {
-          "search_query": "Geographic knowledge: capital city of France",
-          "purpose": "Find a control-style statement that identifies or references the capital city of France (Paris) as the primary required fact."
-        }
-      ]
+      "steps": [],
+      "out_of_domain": true
     },
-    "results": [
-      {
-        "step": {
-          "search_query": "Geographic knowledge: capital city of France",
-          "purpose": "Find a control-style statement that identifies or references the capital city of France (Paris) as the primary required fact."
-        },
-        "documents": []
-      }
-    ],
+    "results": [],
     "documents": [],
     "response": {
       "answer": "I could not find any NIST SP 800-53 control relevant to that question in the policy library, so I cannot answer it. Try rephrasing the question in terms of a security control, a control family, or a control ID such as AC-2.",

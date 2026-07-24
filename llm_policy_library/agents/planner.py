@@ -17,21 +17,34 @@ plan is clamped to `MAX_PLAN_STEPS`: every extra step is a search and an
 embedding call against the p90 latency budget.
 
 The corpus map (`PLANNER_CORPUS_MAP`) is what stops the Planner planning blind.
-With it, the instructions list all twenty control families and the model can do
-two things it otherwise cannot: name the family a step should be filtered to,
-and say that *no* family covers the question at all. The second is the more
-valuable, because it turns the safe fallback from an accident of retrieval —
-searching an off-topic question and happening to find nothing above the floor —
-into a structural refusal that never touches the index.
+With it, the instructions list all twenty control families and the model can say
+that *no* family covers the question at all — which turns the safe fallback from
+an accident of retrieval (searching an off-topic question and happening to find
+nothing above the floor) into a structural refusal that never touches the index.
 
-Both answers are treated as proposals. The category is validated against the
-map's own family list, and both are discarded outright when the map is off,
-because a model asked to pick from a list it was never shown will still pick
+The map was built to buy a second thing as well: a `category` naming the family
+a step should be filtered to. **That half is measured and switched off.** Over
+three eval runs per arm on 2026-07-24 the model filtered 91% of steps, and those
+steps lost recall — -0.093 exact-ID and -0.071 base-family against the unfiltered
+baseline — enough to fail this phase's own acceptance gate, because restricting a
+search to one family fills the top-k with that family's *enhancements* instead of
+the base controls, and leaves a question spanning several families unable to
+reach the rest. The instructions now ask for null, and `plan_query` clears the
+field regardless; `retrieve_step` keeps the filter it was built and probed for,
+against the Phase 11 tier-2 decision. See TODO.md Phase 10 Commit 3.
+
+Both answers are treated as proposals. The category is always cleared, and the
+out-of-domain flag is discarded as well when the map is off, because a model
+asked to pick from a list it was never shown will still pick
 something: measured 2026-07-22, it proposed the families "Access Control (AC)"
 and "SC", neither of which the catalog uses. Discarding rather than trusting is
-what makes the flag an A/B lever: with the map off, this module *plans, filters,
-and refuses* exactly as it did before the map existed, and a broken or missing
-`corpus_map.json` cannot affect that arm because it is never read there.
+what makes the flag an A/B lever: with the map off, this module *plans and
+refuses* exactly as it did before the map existed, and a broken or missing
+`corpus_map.json` cannot affect that arm because it is never read there. A model
+that refuses by planning *nothing* is degraded the same way — the question is
+searched as asked (`question_as_step`), which is what the pre-map system did
+with an off-topic question — so discarding the model's judgement can never cost
+the caller their answer.
 
 What the flag does **not** revert is the request's JSON schema, which
 `PlannerOutput` fixes for both arms. The model is asked for `category` and
@@ -53,7 +66,7 @@ from agent_framework.openai import OpenAIChatClient, OpenAIChatOptions
 from pydantic import ValidationError
 
 from llm_policy_library.config import ReasoningEffort
-from llm_policy_library.corpus_map import family_names, render_map
+from llm_policy_library.corpus_map import render_map
 from llm_policy_library.models import PlannerOutput, PlanStep, QueryPlan
 from llm_policy_library.prompts import get_prompt
 
@@ -72,7 +85,13 @@ PlannerAgent = Agent[PlannerOptions]
 
 
 class PlannerError(RuntimeError):
-    """Raised when the chat model returns no usable plan."""
+    """Raised when the model's answer leaves nothing that can be planned at all.
+
+    Not raised merely because the model planned no usable step: that degrades to
+    searching the question as asked (`question_as_step`). It fires when the model
+    returned nothing or something unparseable, or when the substitute step would
+    itself be blank because the question is.
+    """
 
 
 def build_planner(
@@ -141,8 +160,11 @@ def validated_categories(
     Args:
         steps: The steps the model returned.
         known: The family names a category may name. An empty collection clears
-            every category, which is what a disabled corpus map means: the model
-            was never shown a list, so anything it proposed is a guess.
+            every category, which is what every caller passes today — the
+            filtering half of the corpus map is measured off (see the module
+            docstring). It stays a parameter because re-enabling filtering, for
+            the Phase 11 tier-2 work, means passing `corpus_map.family_names()`
+            here and nothing else.
 
     Returns:
         The steps with unusable categories cleared, and the cleared names in step
@@ -157,6 +179,42 @@ def validated_categories(
         cleared.append(step.category)
         checked.append(step.model_copy(update={"category": None}))
     return checked, cleared
+
+
+def question_as_step(query: str) -> PlanStep:
+    """Build the one step to run when the model planned nothing usable.
+
+    A model that returns no usable step has refused to plan rather than failed.
+    Measured live 2026-07-24: asked an out-of-domain question with the corpus map
+    off, `gpt-5-mini` set `out_of_domain` and omitted steps entirely in 1 of 6
+    direct probe calls — a small sample, and a sufficient one: the same behaviour
+    aborted a live evaluation run. That judgement is discarded on this path, since
+    the model was shown no family list to judge against, which used to leave
+    nothing to search and raised `PlannerError` — surfacing an ordinary off-topic
+    question to the caller as an HTTP 502.
+
+    Searching the question as asked is what the pre-map system did with such a
+    question, every time: the relevance floor then rejects what comes back and
+    the safe fallback is served on the evidence of a search, not on the model's
+    unverified say-so.
+
+    Args:
+        query: The user's question.
+
+    Returns:
+        A single unfiltered step searching the question verbatim.
+
+    Raises:
+        PlannerError: If the question is itself blank, since the substitute step
+            would then carry a blank search query into the embeddings API — the
+            opaque HTTP 400 `usable_steps` exists to prevent.
+    """
+    if not query.strip():
+        raise PlannerError("planner returned no usable step, and the question is blank")
+    return PlanStep(
+        search_query=query,
+        purpose="Search the question as asked: the planner returned no usable step.",
+    )
 
 
 def clamp_steps(steps: list[PlanStep], limit: int = MAX_PLAN_STEPS) -> list[PlanStep]:
@@ -179,20 +237,24 @@ async def plan_query(agent: PlannerAgent, query: str, corpus_map: bool) -> Query
         agent: The Planner Agent.
         query: The user's question.
         corpus_map: Whether the agent was built with the corpus map. It gates the
-            model's two map-shaped answers as well as the prompt: without the map
-            the model has no family list to name a `category` from or to judge
-            `out_of_domain` against, so both are discarded and the plan is
-            exactly what it would have been before the map existed.
+            prompt and the `out_of_domain` verdict: without the map the model has
+            no family list to judge the question against, so its refusal is
+            discarded and the plan is exactly what it would have been before the
+            map existed. It does **not** gate `category`, which is cleared on
+            every path in either setting (see the module docstring).
 
     Returns:
         The plan, with `original_query` set to `query` verbatim. A plan marked
         out of domain carries no steps, and is the one stepless plan that is not
-        an error.
+        an error. On any other path the plan carries at least one step: a model
+        that planned nothing usable degrades to searching the question as asked
+        (`question_as_step`) rather than failing the request.
 
     Raises:
-        PlannerError: If the model returned nothing, an unparseable plan, or a
-            plan with no usable steps. None of these is retryable in place: the
-            caller surfaces the failure rather than answering from an empty plan.
+        PlannerError: If the model returned nothing, an unparseable plan, or no
+            usable step for a question that is itself blank. None of these is
+            retryable in place: the caller surfaces the failure rather than
+            answering from an empty plan.
     """
     response = await agent.run(query)
     try:
@@ -219,7 +281,13 @@ async def plan_query(agent: PlannerAgent, query: str, corpus_map: bool) -> Query
     else:
         usable = usable_steps(planned.steps)
         if not usable:
-            raise PlannerError("planner returned a plan with no steps carrying a search query")
+            # A refusal this path does not trust, not a failure: degrade to
+            # searching the question rather than raising (see `question_as_step`).
+            usable = [question_as_step(query)]
+            logger.warning(
+                "planner returned no usable step; searching the question as asked",
+                extra={"query": query, "planned_steps": len(planned.steps)},
+            )
 
         if len(usable) > MAX_PLAN_STEPS:
             # The instructions ask for at most MAX_PLAN_STEPS. Exceeding them is a
@@ -236,17 +304,27 @@ async def plan_query(agent: PlannerAgent, query: str, corpus_map: bool) -> Query
         # Clamped once, above the branch: the limit is not a property of either
         # arm, and a second call site is a second place for it to go missing from.
         capped = clamp_steps(usable)
-        if corpus_map:
-            steps, unknown = validated_categories(capped, family_names())
-            if unknown:
-                # Only a drift signal when the model *had* the list: it was given
-                # the family names and still wrote something else.
-                logger.warning(
-                    "planner proposed a category naming no control family",
-                    extra={"query": query, "unknown_categories": unknown},
-                )
-        else:
-            steps, _ = validated_categories(capped, ())
+        # Every category is cleared, in both arms, so every search runs unfiltered.
+        # This is a measured decision, not an oversight: over three eval runs per
+        # arm (2026-07-24) the map's *filtering* half cost recall on the twelve
+        # queries it filtered — -0.093 exact-ID and -0.071 base-family — and failed
+        # the phase's own acceptance gate, while its out-of-domain half passed
+        # cleanly. Restricting a search to one family does not surface that
+        # family's base controls; it fills the top-k with that family's
+        # enhancements, and a question spanning several families can no longer
+        # reach the others at all. `retrieve_step` keeps the filter it was built
+        # and probed for, against the Phase 11 tier-2 decision — nothing on the
+        # serving path sets one today. See TODO.md Phase 10 Commit 3.
+        steps, proposed = validated_categories(capped, ())
+        if corpus_map and proposed:
+            # Drift only when the model was told what to do: the map block asks
+            # for null outright, so a category here means the instruction missed.
+            # With the map off the model was told nothing, and guessing is
+            # expected — warning there would fire on ordinary baseline traffic.
+            logger.warning(
+                "planner set a category although the instructions ask for none",
+                extra={"query": query, "discarded_categories": proposed},
+            )
 
     plan = QueryPlan(original_query=query, steps=steps, out_of_domain=out_of_domain)
     usage = response.usage_details or UsageDetails()
@@ -270,9 +348,11 @@ async def plan_query(agent: PlannerAgent, query: str, corpus_map: bool) -> Query
             # Every field of each kept step: the query drives retrieval, the
             # purpose is the model's stated reason for it — the only record of
             # *why* a search ran, which `PlanStep.purpose` exists to preserve —
-            # and the category is the filter the search really ran under, after
-            # validation, so a narrowed search is auditable as narrowed. It is
-            # null exactly when the step searched every family.
+            # and the category is the filter the search really ran under, which
+            # today is always null because filtering is disabled. It is logged
+            # anyway: it records what was *executed* rather than what the model
+            # proposed, so a reader can tell an unfiltered search from a filtered
+            # one without knowing which release they are looking at.
             "steps": [
                 {
                     "search_query": step.search_query,

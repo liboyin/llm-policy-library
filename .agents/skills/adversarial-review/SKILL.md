@@ -23,11 +23,11 @@ The caller provides the purpose; target (dirty tree, commit, or range); in-scope
    Use **Gemini 3.1 Pro High** as the second reviewer via Antigravity CLI:
 
    ```bash
-   agy --mode plan --sandbox --model gemini-3.1-pro-high --print-timeout 10m \
+   agy --mode plan --sandbox --model gemini-3.1-pro-high --print-timeout 15m \
      -p "$(cat <prompt-file>)" < /dev/null
    ```
 
-   Never pass `--dangerously-skip-permissions`; request senior review, not “vulnerability hunting.” Any wrapper timeout MUST exceed `--print-timeout` (exit 124 belongs to the wrapper). Retry one internal response timeout with the bounded-command rule restated. If either required reviewer or model family is unavailable or remains unreachable after that retry, you MUST stop and ask the user what to do; do not substitute, proceed with one reviewer, or issue a verdict without their direction. Record the user's decision in the report.
+   Never pass `--dangerously-skip-permissions`; request senior review, not “vulnerability hunting.” Any wrapper timeout MUST exceed `--print-timeout` (exit 124 belongs to the wrapper). Retry one internal response timeout with the bounded-command rule restated. Antigravity CLI's exit status does not report failure — a blocked, unauthenticated, or timed-out run can still exit 0 — so judge every run by its output file. A backgrounded wrapper writes **nothing** to the harness's own task file until it exits, so that file is not a progress signal: check liveness with `ps -eo pid,etime,pcpu,cmd` and the output file's mtime, and wait on the resolved PID (`while kill -0 <pid>; do sleep 20; done`). If either required reviewer or model family is unavailable or remains unreachable after that retry, you MUST stop and ask the user what to do; do not substitute, proceed with one reviewer, or issue a verdict without their direction. Record the user's decision in the report.
 
    The prompt MUST include all caller input, repository and scratch paths, the report fields, and these rules:
 

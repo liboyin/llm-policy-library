@@ -1,73 +1,67 @@
 ---
 name: adversarial-review
-description: Use when a non-trivial change touching code, tests, or configuration is ready for commit — runs independent reviews across two model families, verifies findings against the tree, and returns a triaged report without making code changes.
+description: Read-only, multi-model review and triage of a non-trivial code, test, or configuration change.
 ---
 
 # Adversarial Review
 
-Act as a function call: the caller supplies the context below, and you return a triaged review report. You MUST NOT modify any file — no edits, fixes, stashes, or formatters. If run in the main conversation, dispatch this process to a subagent to keep the main context clean.
+Return a verified adversarial review report without editing, fixing, stashing, formatting, or otherwise writing to the repository. Reviewers MAY propose remedies but MUST NOT implement them.
 
-## Required context from the caller
+## Input
 
-- **Purpose:** what the change is supposed to achieve.
-- **In-scope paths:** the files/directories under review.
-- **Known-unrelated dirty paths:** changes in the tree to ignore.
-- **Accepted out-of-scope items:** findings the user has already decided not to act on — do not re-raise them.
-
-If it is unclear which dirty paths belong to the change, ask the caller rather than reviewing the whole tree by default. If other context is missing, state your assumption for it in the report header rather than blocking.
+The caller provides the purpose; target (dirty tree, commit, or range); in-scope paths; unrelated dirty paths to preserve and ignore; accepted out-of-scope findings not to re-raise; and any prior mutation evidence. Ask only if target or scope is unclear; report other assumptions.
 
 ## Procedure
 
-1. **Gather context:** `git status`, `git diff` (staged and unstaged), new untracked files in full, and enough surrounding code, tests, and documentation (`README.md`, `TODO.md`, `docs/`) to judge the change in context.
+1. **Snapshot and read.** Capture `git status`; SHA-256 hashes of in-scope and dirty tracked files; path/status metadata (not content) of ignored untracked files; and baseline PIDs/listeners if a command might start a service. Read the full target diff (staged changes and in-scope untracked files included for worktrees), relevant source/tests, `README.md`, `TODO.md`, and `docs/`. Do not read ignored untracked content.
 
-2. **Dispatch two reviewers in parallel,** from different model families, with the identical prompt and no sight of each other's output. Each must see the entire change in one pass — splitting files across reviewers hides cross-file defects.
-   - **Reviewer 1:** Claude Fable 5 via a plan-mode subagent (fall back to Claude Opus 4.8).
-   - **Reviewer 2:** Antigravity (Gemini) via `agy --mode plan --sandbox -p "$(cat <prompt-file>)" < /dev/null`. The `< /dev/null` prevents hanging; never use `--dangerously-skip-permissions`. Ask for a senior code review, not "vulnerability hunting" (degrades results). Allow ~10 minutes; `timeout` exit `124` is a timeout, not an `agy` failure; on agy's internal `Error: timeout waiting for response`, retry restating the bounded-commands rule below.
+2. **Dispatch reviewers in parallel.** Give the complete change and identical review prompt—apart from identity and separate scratch paths—to two isolated reviewers from different model families; never split files. Select the first reviewer from the main agent:
 
-   The prompt MUST contain the purpose, repository path, in-scope paths, paths to ignore, accepted out-of-scope items, a scratch directory assigned to that reviewer, and these ground rules: do not modify the repo or anyone else's scratchpad; mutation-test only on a scratch copy outside the repo — copy `llm_policy_library/`, `tests/`, and `pyproject.toml`, run `pytest` from the scratch root, and prove the copy shadows the repo's editable install by planting a loud mutant before trusting any survivor; keep every command foreground and bounded; confirm `git status` shows the same dirty set at exit as at entry.
+   - **Codex:** `gpt-5.6-sol` high reasoning via tool use.
+   - **Claude Code:** `claude-fable-5` high reasoning via tool use.
 
-   **Questions to evaluate:**
-   - Does it achieve the intended purpose? Is it bug-free? Any gaps or regressions?
-   - Can it be simplified? Is it consistent with the documentation?
-   - Are there design flaws, anti-patterns, or choices that make testing difficult?
-   - Can each new assertion fail for the reason it claims, or is it tautological given the mechanism that satisfies it? Build a mutant toward a *future* regression (the caller has already tried the revert) and report which mutants were killed.
-   - Do the change's own factual claims — docstrings, comments, the `TODO.md` status block — hold under measurement rather than reading? For claims about failure behavior, induce the failure.
+   Use **Gemini 3.1 Pro High** as the second reviewer via Antigravity CLI:
 
-   **Freeze the tree until both reviewers report:** fingerprint the in-scope files (`md5sum`) before dispatch. The freeze binds the caller too — fixes wait, and the caller's own mutation runs use a scratch copy outside the repo, never in-place edits.
+   ```bash
+   agy --mode plan --sandbox --model gemini-3.1-pro-high --print-timeout 10m \
+     -p "$(cat <prompt-file>)" < /dev/null
+   ```
 
-   **Serialize gate measurements:** `pytest` runs share the repo-root `.coverage` data file, so concurrent coverage runs corrupt each other. One runner on the tree at a time, reviewers included.
+   Never pass `--dangerously-skip-permissions`; request senior review, not “vulnerability hunting.” Any wrapper timeout MUST exceed `--print-timeout` (exit 124 belongs to the wrapper). Retry one internal response timeout with the bounded-command rule restated. If either required reviewer or model family is unavailable or remains unreachable after that retry, you MUST stop and ask the user what to do; do not substitute, proceed with one reviewer, or issue a verdict without their direction. Record the user's decision in the report.
 
-3. **Reclaim the tree:** check for stray files *and* stray listeners — a leftover `uvicorn` still holds its port and answers later manual checks with stale code. Kill by PID and verify per the cleanup rule in AGENTS.md; never `pkill -f`.
+   The prompt MUST include all caller input, repository and scratch paths, the report fields, and these rules:
 
-4. **Verify findings:** reviewer output is hypotheses, not facts. Confirm each finding against the diff and surrounding source, and empirically where cheap via the project's read-only test and lint commands (see AGENTS.md).
+   - Keep commands foreground and bounded; change neither the repository nor another reviewer's scratch. Compare repository status and hashes at exit.
+   - Judge purpose, correctness, regressions, simplicity, documentation consistency, design/operational anti-patterns, and testability. Check that assertions can fail for their stated reason rather than being tautological. Measure factual claims; induce failures only in a safe, controlled setup.
+   - You MAY propose remedies, but MUST NOT implement them. Present each remedy as a proposal for the main-agent to review.
+   - For changed code/tests, mutation-test new assertions only in scratch. Discover and copy every imported/runtime-read path; the current minimum is `llm_policy_library/`, `tests/`, `loadtest/`, `evaluation/`, `static/`, and `pyproject.toml`. First pass the baseline suite; then make a loud mutant fail to prove the copy shadows editable installs. Restore it and test an applicable revert mutant unless evidence was supplied, plus a future-regression mutant; report kills and survivors.
 
-5. **Triage** every *verified* finding into exactly one severity:
-   - **Blocking:** bugs, broken tests, unmet requirements, security problems, broken contracts, violations of AGENTS.md MUSTs.
-   - **Non-blocking:** should be fixed, but the change is shippable without it.
-   - **Nit:** style or taste; mention only if cheap to fix.
+   Freeze repository edits until both reviewers return. Serialize repository-root coverage runs because they share `.coverage`; distinct scratch roots may test concurrently.
 
-## Report format
+3. **Reclaim and verify.** Compare exit status and hashes with entry. Remove and verify only scratch artifacts and processes/listeners proven from the baseline and recorded PIDs to belong to this review; MUST NOT use `pkill -f`. Any unexplained repository change blocks the review.
 
-Return exactly this structure, and no code edits:
+4. **Verify, triage, and report.** Treat reviewer claims as hypotheses: validate each diagnosis against the diff/source and, when safe, by measurement in scratch; check third-party behavior in installed source or version-matched official docs. Review each proposed remedy separately from the diagnosis before accepting, implementing, or including it in the final report. Classify each verified finding once: **Blocking** for bugs, broken tests, requirements/contracts/security failures, misleading claims, or `AGENTS.md` MUST violations; **Non-blocking** for deferrable improvements; **Nit** for cheap style/taste only. Record rejected hypotheses under **Dismissed**.
+
+## Report
+
+Return this structure without rewritten code. Every finding MUST cite a path and, when possible, a line; write “None” for empty sections.
 
 ```markdown
 ## Adversarial Review Report
-
-**Purpose reviewed against:** <one line>
-**Reviewers:** <e.g., Fable 5 (subagent), Antigravity (agy)>
-**Verification run:** <commands run and their pass/fail results; note any reviewer timeouts or failures>
+**Purpose:** ...
+**Target:** ...
+**Reviewers:** <models/tools; substitutions/failures>
+**Assumptions:** ...
+**Verification:** <commands and results>
 
 ### Blocking
-1. `path/to/file.py:42` — <finding>. Why it matters: <one line>. Suggested direction: <one line, no code>.
-
+1. `path:line` — <defect>. Impact: ... Proposed remedy (optional): ...
 ### Non-blocking
-...same shape...
-
+...
 ### Nits
-...same shape...
-
+...
+### Dismissed
+<hypothesis and measured reason>
 ### Verdict
-<"No blocking findings" | "N blocking findings — fix and re-review" | "Review blocked — insufficient model availability">
+<No blocking findings | N blocking findings — fix and re-review | Review blocked — model availability or repository integrity>
 ```
-
-If a section has no findings, write "None." Findings MUST cite a file path (with line where possible) and MUST NOT include rewritten code — describe the direction, let the implementer implement.
